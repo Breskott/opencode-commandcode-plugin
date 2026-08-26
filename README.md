@@ -1,111 +1,117 @@
 # opencode-commandcode-plugin
 
-Plugins para usar o [Command Code](https://commandcode.ai) como provider no [OpenCode](https://opencode.ai).
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![OpenCode](https://img.shields.io/badge/OpenCode-1.x%20%7C%202.x%20(beta)-blueviolet)](https://opencode.ai)
+[![Command Code](https://img.shields.io/badge/Provider-Command%20Code-00A86B)](https://commandcode.ai)
 
-Este repositório contém **dois plugins**:
+> 🇧🇷 **[Versão em Português (Brasil)](README.pt-BR.md)**
 
-| Arquivo | OpenCode | Status |
+Plugins that wire the [Command Code](https://commandcode.ai) gateway into [OpenCode](https://opencode.ai) as a first-class provider.
+
+This repo ships **two plugins** — one for each OpenCode major:
+
+| File | OpenCode | Status |
 | --- | --- | --- |
-| `commandcode-v1.ts` | **v1** (stable) | Use com OpenCode 1.x |
-| `commandcode-v2.ts` | **v2** (beta) | Use com OpenCode 2.x (beta) |
+| `commandcode-v1.ts` | **v1** (stable) | Use with OpenCode 1.x |
+| `commandcode-v2.ts` | **v2** (beta) | Use with OpenCode 2.x (beta) |
 
-> Use **apenas um** deles, de acordo com a sua versão do OpenCode. Os dois compartilham o mesmo catálogo estático de modelos (58 modelos, snapshot de 25/08/2026), mas o jeito de declarar provider e capabilities mudou entre v1 e v2.
-
----
-
-## O que o plugin faz
-
-A Command Code é um gateway OpenAI-compatible focado em coding agents. Ela expõe o endpoint `GET /provider/v1/models`, mas a resposta tem **só** `id`, `name` e `context_length` — não traz `capabilities` (visão, ferramentas, reasoning) nem `cost` (preço por token).
-
-Os dois plugins fazem a mesma coisa:
-
-1. Descobrem os modelos via `GET https://api.commandcode.ai/provider/v1/models` (com cache de 5 min).
-2. Cruzam o id com um **catálogo estático embutido** (capabilities + preço + context window + max output + reasoning efforts) e completam o que a API não devolve.
-3. Registram o provider `commandcode` no OpenCode, com `baseURL` e `apiKey` apontando pra Command Code.
-
-Resultado: você vê todos os modelos da Command Code na TUI do OpenCode com capacidade de attachment correta, custo real por 1M de tokens, e seletor de reasoning effort (low/medium/high/xhigh/max) onde o modelo suporta.
+> Use **only one** of them, matching your OpenCode version. They share the same static model catalog (58 models, snapshot 2026-08-25), but the way providers and capabilities are described changed between v1 and v2.
 
 ---
 
-## Pré-requisitos
+## What the plugin does
 
-- Node.js + TypeScript (ou Bun/Deno — qualquer runtime que o seu OpenCode usar)
-- Uma conta na Command Code com uma API key
-- OpenCode instalado
+Command Code is an OpenAI-compatible gateway focused on coding agents. It exposes `GET /provider/v1/models`, but the response only carries `id`, `name`, and `context_length` — there is **no** `capabilities` (vision, tools, reasoning) and **no** `cost` (per-token pricing).
+
+Both plugins do the same thing:
+
+1. Discover the model list via `GET https://api.commandcode.ai/provider/v1/models` (5-minute in-memory cache).
+2. Cross-reference each id against an **embedded static catalog** (capabilities + price + context window + max output + reasoning efforts) and fill in what the API does not return.
+3. Register the `commandcode` provider in OpenCode, with `baseURL` and `apiKey` pointing at Command Code.
+
+End result: every Command Code model shows up in the OpenCode TUI with correct attachment capability, real per-1M-token cost, and a reasoning-effort selector (low / medium / high / xhigh / max) where the model supports it.
 
 ---
 
-## Instalação (Windows / PowerShell)
+## Requirements
 
-### 1. Defina a `CMD_API_KEY` no escopo **User** (recomendado)
+- Node.js + TypeScript (or Bun / Deno — anything your OpenCode setup runs)
+- A Command Code account with an API key
+- OpenCode installed
 
-Escopo **User** mantém a chave restrita ao seu usuário do Windows — não vaza pra outros usuários da máquina nem exige admin.
+---
+
+## Installation (Windows / PowerShell)
+
+### 1. Set `CMD_API_KEY` in the **User** scope (recommended)
+
+The **User** scope keeps the key restricted to your Windows account — it does not leak to other users on the machine and does not require admin.
 
 ```powershell
 $env:CMD_API_KEY = Read-Host "CMD_API_KEY" -MaskInput
 [Environment]::SetEnvironmentVariable("CMD_API_KEY", $env:CMD_API_KEY, "User")
 ```
 
-Reabra o terminal depois pra variável carregar nas novas sessões. Pra confirmar:
+Open a new terminal afterwards so the variable loads into fresh sessions. Verify with:
 
 ```powershell
 [Environment]::GetEnvironmentVariable("CMD_API_KEY", "User")
 ```
 
-> **Outros escopos (opcional):**
-> - `Process` — vale só na sessão atual do PowerShell (`$env:CMD_API_KEY = "..."`). Some quando fecha.
-> - `Machine` — vale pra todos os usuários do PC. Exige rodar PowerShell como Admin: `[Environment]::SetEnvironmentVariable("CMD_API_KEY", "...", "Machine")`. Use só se o PC é seu ou se outros usuários também vão usar o OpenCode com Command Code.
+> **Other scopes (optional):**
+> - `Process` — current PowerShell session only (`$env:CMD_API_KEY = "..."`). Disappears when the window closes.
+> - `Machine` — all users on the PC. Requires an elevated PowerShell: `[Environment]::SetEnvironmentVariable("CMD_API_KEY", "...", "Machine")`. Only use this if the machine is yours or if other users will also run OpenCode with Command Code.
 
-### 2. Copie o plugin pro seu `~/.config/opencode/plugin/`
+### 2. Drop the plugin into `~/.config/opencode/plugin/`
 
-Baixe o arquivo certo pra sua versão:
+Download the file that matches your OpenCode version:
 
-- v1 → baixe `commandcode-v1.ts`
-- v2 → baixe `commandcode-v2.ts`
+- v1 → download `commandcode-v1.ts`
+- v2 → download `commandcode-v2.ts`
 
-E coloque em:
+Place it in:
 
 - **Windows:** `%USERPROFILE%\.config\opencode\plugin\`
-- **Linux/macOS:** `~/.config/opencode/plugin/`
+- **Linux / macOS:** `~/.config/opencode/plugin/`
 
-O OpenCode carrega qualquer `.ts`/`.js` desse diretório automaticamente.
+OpenCode auto-loads every `.ts` / `.js` in that directory.
 
-### 3. Reinicie o OpenCode
+### 3. Restart OpenCode
 
-Pronto. O provider `commandcode` aparece no seletor de modelos com todos os modelos da Command Code, capacidades corretas, e variants de reasoning onde aplicável.
+Done. The `commandcode` provider appears in the model picker with every Command Code model, correct capabilities, and reasoning variants where applicable.
 
 ---
 
-## Qual arquivo usar? v1 ou v2
+## Which file should I use? v1 or v2
 
 | | `commandcode-v1.ts` | `commandcode-v2.ts` |
 | --- | --- | --- |
-| **Versão do OpenCode** | 1.x (stable) | 2.x (beta) |
-| **API de import** | `import type { Config, Plugin } from "@opencode-ai/plugin"` | `import { define, type CatalogDraft } from "@opencode-ai/plugin/v2/promise"` |
-| **Como registra o provider** | `config.provider[id] = {...}` direto via hook `config` | `ctx.catalog.transform(catalog => ...)` |
-| **Como recarrega modelos** | Descobre durante o `config` (cache em memória) | Descobre em background + `catalog.reload()` quando a lista muda |
-| **Campo do package AI SDK** | `npm: "@ai-sdk/openai-compatible"` | `package: "aisdk:@ai-sdk/openai-compatible"` (com prefixo `aisdk:`) |
-| **Bloco de attachment** | `attachment: true` + `modalities: { input: ["text","image"] }` | `capabilities: { tools, input: ["text","image"], output: ["text"] }` (sem flag `attachment`) |
-| **Formato de `cost`** | Objeto `{ input, output, cache_read, cache_write }` | Array `ModelCost[]` com `{ input, output, cache: { read, write } }` |
-| **`variants` (reasoning)** | Objeto nomeado `{ low: { reasoningEffort: "low" }, ... }` | Array `{ id, headers: {}, body: { reasoningEffort } }[]` |
-| **`limit`** | Exige `context` E `output` | `context` obrigatório; `output` cai no default se ausente |
-| **API bloqueante?** | Sim (await dentro de `config`) | Não (transform síncrono; discovery em background) |
+| **OpenCode version** | 1.x (stable) | 2.x (beta) |
+| **Import API** | `import type { Config, Plugin } from "@opencode-ai/plugin"` | `import { define, type CatalogDraft } from "@opencode-ai/plugin/v2/promise"` |
+| **How the provider is registered** | `config.provider[id] = {...}` directly via the `config` hook | `ctx.catalog.transform(catalog => ...)` |
+| **How models reload** | Discovery runs inside `config` (in-memory cache) | Discovery runs in background + `catalog.reload()` when the list changes |
+| **AI SDK package field** | `npm: "@ai-sdk/openai-compatible"` | `package: "aisdk:@ai-sdk/openai-compatible"` (with the `aisdk:` prefix) |
+| **Attachment block** | `attachment: true` + `modalities: { input: ["text","image"] }` | `capabilities: { tools, input: ["text","image"], output: ["text"] }` (no `attachment` flag) |
+| **`cost` shape** | Object `{ input, output, cache_read, cache_write }` | `ModelCost[]` array of `{ input, output, cache: { read, write } }` |
+| **`variants` (reasoning)** | Named object `{ low: { reasoningEffort: "low" }, ... }` | Array `{ id, headers: {}, body: { reasoningEffort } }[]` |
+| **`limit`** | Requires both `context` AND `output` | `context` required; `output` falls back to the default if absent |
+| **Blocking API?** | Yes (await inside `config`) | No (transform is sync; discovery runs in background) |
 
-**Resumo:** o v2 troca a forma de declarar o provider (passa a usar o `catalog` oficial do opencode2 com prefixo `aisdk:`), separa `cost` em array, e tira o `attachment` (substituído por `capabilities.input`). Comportamento de runtime (modelos, cache, capabilities, fallback estático) é idêntico.
-
----
-
-## Modelo de configuração da chave
-
-Ambos os plugins leem a chave da env var `process.env.CMD_API_KEY`. **Não há `npm install`, `dotenv` nem `opencode.json` envolvido** — você seta a variável e reinicia o OpenCode.
-
-Se `CMD_API_KEY` não estiver definida, o plugin só loga um aviso (`provider não carregado`) e segue a vida. O OpenCode não quebra.
+**TL;DR:** v2 swaps how the provider is declared (uses opencode2's official `catalog` with the `aisdk:` prefix), turns `cost` into an array, and drops the `attachment` flag (replaced by `capabilities.input`). Runtime behavior (models, caching, capabilities, static fallback) is identical.
 
 ---
 
-## Customização
+## How the API key is read
 
-Ambos os plugins têm um bloco `MODEL_OVERRIDES` no topo pra você forçar capabilities de um modelo específico sem editar o catálogo:
+Both plugins read the key from `process.env.CMD_API_KEY`. **There is no `npm install`, no `dotenv`, no `opencode.json` involved** — set the variable and restart OpenCode.
+
+If `CMD_API_KEY` is missing, the plugin just logs a warning (`provider not loaded`) and moves on. OpenCode does not crash.
+
+---
+
+## Customization
+
+Both plugins expose a `MODEL_OVERRIDES` block at the top so you can force capabilities for a specific model without editing the catalog:
 
 ```ts
 const MODEL_OVERRIDES = {
@@ -113,53 +119,53 @@ const MODEL_OVERRIDES = {
 }
 ```
 
-No v2, o override aceita `{ input?: Modality[], tool_call?: boolean }`. No v1, aceita também `reasoning?: boolean`.
+In v2 the override accepts `{ input?: Modality[], tool_call?: boolean }`. In v1 it also accepts `reasoning?: boolean`.
 
-A cascata de decisão é:
+The decision cascade is:
 
-1. `MODEL_OVERRIDES[id]` (seu override manual — sempre vence)
-2. `CATALOG[id]` (snapshot estático embutido)
-3. Prefixo do id (heurística pra modelos novos que a Command Code lançou depois do snapshot)
+1. `MODEL_OVERRIDES[id]` (your manual override — always wins)
+2. `CATALOG[id]` (embedded static snapshot)
+3. Id prefix (heuristic for new models Command Code launched after the snapshot)
 
-Modelo que cai no nível 3 entra com capacidades conservadoras (texto, sem reasoning, custo `$0.00`) e aparece no log com um aviso: `N modelo(s) fora do snapshot do catalogo`.
-
----
-
-## Atualizando o catálogo
-
-Quando a Command Code lançar modelos novos ou mudar preço/capabilities:
-
-1. Confira a lista oficial em <https://commandcode.ai/models>.
-2. Edite as tabelas `CATALOG`, `CONTEXT_WINDOW`, `MAX_OUTPUT`, `REASONING_EFFORTS` no arquivo da sua versão.
-3. Suba um PR com a atualização (compare com a data do snapshot no comentário no topo).
+Models that fall to tier 3 enter with conservative defaults (text-only, no reasoning, `$0.00` cost) and trigger a log warning: `N model(s) outside catalog snapshot`.
 
 ---
 
-## Avisos do plugin no log
+## Updating the catalog
 
-Os dois plugins usam `client.app.log` quando o `client` está disponível (v1) ou `console.info`/`console.warn` (v2). Você verá linhas tipo:
+When Command Code adds new models or changes pricing / capabilities:
+
+1. Check the official list at <https://commandcode.ai/models>.
+2. Edit the `CATALOG`, `CONTEXT_WINDOW`, `MAX_OUTPUT`, and `REASONING_EFFORTS` tables in your version's file.
+3. Open a PR with the update (compare against the snapshot date in the header comment).
+
+---
+
+## Plugin log messages
+
+Both plugins use `client.app.log` when the `client` is available (v1) or `console.info` / `console.warn` (v2). You'll see lines like:
 
 ```
-[commandcode] 58 modelos descobertos (44 com attachment).
-[commandcode] 2 modelo(s) fora do snapshot do catalogo { ids: "modelo-novo-1, modelo-novo-2" }
-[commandcode] descoberta de modelos falhou: ...
+[commandcode] 58 models discovered (44 with attachment).
+[commandcode] 2 model(s) outside catalog snapshot { ids: "new-model-1, new-model-2" }
+[commandcode] model discovery failed: ...
 ```
 
-Se a descoberta falhar (rede fora, key inválida), o plugin **não** derruba o OpenCode — ele cai pro snapshot estático embutido e segue.
+If discovery fails (network down, bad key), the plugin **does not** kill OpenCode — it falls back to the embedded static snapshot and keeps going.
 
 ---
 
-## Compatibilidade
+## Compatibility
 
 - **OpenCode 1.x** → use `commandcode-v1.ts`.
 - **OpenCode 2.x (beta)** → use `commandcode-v2.ts`.
-- Misturar (v1 em OpenCode 2, ou v2 em OpenCode 1) **não funciona** — os tipos de `Config`/`Plugin`/`define`/`CatalogDraft` são incompatíveis.
+- Cross-mixing (v1 plugin on OpenCode 2, or v2 plugin on OpenCode 1) **does not work** — the `Config` / `Plugin` / `define` / `CatalogDraft` types are incompatible.
 
 ---
 
-## Créditos
+## Credits
 
-- Provider: [Command Code](https://commandcode.ai) — gateway OpenAI-compatible focado em coding agents.
-- Cliente: [OpenCode](https://opencode.ai) — AI coding agent open-source.
-- Mantido por **Victor Brescott** ([@Breskott](https://github.com/Breskott)).
-- Licença: MIT — use à vontade.
+- Provider: [Command Code](https://commandcode.ai) — OpenAI-compatible gateway focused on coding agents.
+- Client: [OpenCode](https://opencode.ai) — open-source AI coding agent.
+- Maintained by **Victor Brescott** ([@Breskott](https://github.com/Breskott)).
+- License: MIT — use freely.
