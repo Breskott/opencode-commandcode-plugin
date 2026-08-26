@@ -15,14 +15,17 @@ const NPM_PACKAGE = "@ai-sdk/openai-compatible"
 const REQUEST_TIMEOUT_MS = 15_000
 const CACHE_TTL_MS = 5 * 60 * 1000
 
-// O schema v1 exige `context` E `output` em `limit`.
+// O schema v1 exige `context` E `output` em `limit`. O /models devolve
+// context_length para todos os modelos, entao DEFAULT_CONTEXT_TOKENS so entra
+// em cena se a API mudar de shape ou no fallback offline (que so tem os ids).
 const DEFAULT_OUTPUT_TOKENS = 32_000
 const DEFAULT_CONTEXT_TOKENS = 200_000
 
 type Modality = "text" | "image"
 
 // ---------------------------------------------------------------------------
-// CATALOGO ESTATICO: capabilities + preco
+// CATALOGO ESTATICO: SO o que a API nao devolve (capability de imagem, flag de
+// reasoning e preco). Id, nome e context window vem sempre do /models ao vivo.
 // O endpoint /models da Command Code devolve apenas id, name e context_length.
 // Nao ha capability nem preco na resposta, entao nada disso da para derivar em
 // runtime. Esta tabela foi extraida da pagina publica commandcode.ai/models.
@@ -100,70 +103,6 @@ const CATALOG: Readonly<Record<string, ModelSpec>> = {
   "zai-org/GLM-5.3": { vision: false, reasoning: true, cost: { input: 1.4, output: 4.4, cache_read: 0.26 } },
 }
 
-// Context window (tokens) por modelo — snapshot commandcode.ai/models + docs do
-// plano GOAT (commandcode.ai/docs/plans/goat). Fallback usado quando o /models nao
-// mandar context_length. O valor da API (quando vem) SEMPRE vence este mapa; este
-// mapa vence o DEFAULT chapado. Ids sem entrada aqui caem em DEFAULT_CONTEXT_TOKENS.
-const CONTEXT_WINDOW: Readonly<Record<string, number>> = {
-  "claude-fable-5": 1_000_000,
-  "claude-haiku-4-5-20251001": 200_000,
-  "claude-opus-4-7": 1_000_000,
-  "claude-opus-4-8": 1_000_000,
-  "claude-opus-5": 1_000_000,
-  "claude-sonnet-4-6": 1_000_000,
-  "claude-sonnet-5": 1_000_000,
-  "deepseek/deepseek-v4-flash": 1_000_000,
-  "deepseek/deepseek-v4-flash-vision-exp": 1_000_000,
-  "deepseek/deepseek-v4-pro": 1_000_000,
-  "google/gemini-3.1-flash-lite": 1_000_000,
-  "google/gemini-3.5-flash": 1_000_000,
-  "google/gemini-3.5-flash-lite": 1_000_000,
-  "google/gemini-3.6-flash": 1_000_000,
-  "google/gemini-3.7-flash": 1_048_576,
-  "gpt-5.3-codex": 400_000,
-  "gpt-5.4": 400_000,
-  "gpt-5.4-mini": 400_000,
-  "gpt-5.5": 400_000,
-  "gpt-5.6-luna": 1_050_000,
-  "gpt-5.6-sol": 1_050_000,
-  "gpt-5.6-terra": 1_050_000,
-  "meta/muse-spark-1.1": 1_048_576,
-  "meta/muse-spark-1.2": 1_048_576,
-  "meta/muse-spark-1.2-contributor": 1_048_576,
-  "MiniMaxAI/MiniMax-M2.5": 200_000,
-  "MiniMaxAI/MiniMax-M2.7": 200_000,
-  "MiniMaxAI/MiniMax-M3": 1_000_000,
-  "moonshotai/Kimi-K2.5": 256_000,
-  "moonshotai/Kimi-K2.6": 256_000,
-  "moonshotai/Kimi-K2.7-Code": 256_000,
-  "moonshotai/Kimi-K2.7-Code-Highspeed": 262_000,
-  "moonshotai/Kimi-K3": 1_000_000,
-  "nvidia/nemotron-3-ultra-550b-a55b": 1_000_000,
-  "poolside/laguna-s-2.1-free": 256_000,
-  "Qwen/Qwen3.6-Max-Preview": 200_000,
-  "Qwen/Qwen3.7-Flash": 1_000_000,
-  "Qwen/Qwen3.7-Max": 1_000_000,
-  "Qwen/Qwen3.7-Plus": 1_000_000,
-  "Qwen/Qwen3.8-27B": 262_144,
-  "Qwen/Qwen3.8-Max": 1_000_000,
-  "sakana/fugu-ultra": 1_000_000,
-  "stealth/ox-alpha": 1_048_576,
-  "stepfun/Step-3.5-Flash": 1_000_000,
-  "stepfun/Step-3.7-Flash": 256_000,
-  "tencent/hy3-paid": 262_144,
-  "thinkingmachines/inkling": 256_000,
-  "thinkingmachines/inkling-small": 1_000_000,
-  "xai/grok-4.5": 500_000,
-  "xai/grok-4.6": 500_000,
-  "xiaomi/mimo-v2.5": 1_000_000,
-  "xiaomi/mimo-v2.5-pro": 1_000_000,
-  "zai-org/GLM-5": 200_000,
-  "zai-org/GLM-5.1": 200_000,
-  "zai-org/GLM-5.2": 1_000_000,
-  "zai-org/GLM-5.2-Fast": 1_000_000,
-  "zai-org/GLM-5.3": 1_000_000,
-}
-
 // maxOutput conhecido do snapshot. O /models da Command Code NAO devolve output e
 // nem o site publica cap por modelo, entao o resto usa DEFAULT_OUTPUT_TOKENS.
 const MAX_OUTPUT: Readonly<Record<string, number>> = {
@@ -222,6 +161,19 @@ export interface CommandCodeModel {
   id: string
   name?: string
   context_length?: number
+}
+
+/**
+ * Nome de exibicao. Modelo cujo id contem "free" (ex: poolside/laguna-s-2.1-free)
+ * ganha o sufixo " Free", ja que a API manda o nome limpo ("Laguna S 2.1") e nao
+ * da para distinguir gratuito de pago na lista da TUI. Idempotente: se a Command
+ * Code passar a mandar "Free" no proprio nome, nao duplica.
+ */
+function displayName(model: CommandCodeModel): string {
+  const base = model.name ?? model.id
+  const isFree = /(^|[^a-z])free([^a-z]|$)/i.test(model.id)
+  if (!isFree || /(^|\s)free(\s|$)/i.test(base)) return base
+  return `${base} Free`
 }
 
 /**
@@ -316,16 +268,18 @@ export function applyConfig(
 
     const entry: Record<string, unknown> = {
       id: source.id,
-      name: source.name ?? source.id,
+      name: displayName(source),
       tool_call: supportsTools(source),
       reasoning: supportsReasoning(source),
       // `attachment` e o flag que libera o opencode a montar parts de imagem.
       // Sem ele o anexo e descartado no cliente e o modelo recebe so o texto.
       attachment: input.includes("image"),
       modalities: { input, output: ["text"] },
-      // Precedencia: valor ao vivo do /models > snapshot por modelo > default.
       limit: {
-        context: source.context_length ?? CONTEXT_WINDOW[source.id] ?? DEFAULT_CONTEXT_TOKENS,
+        // Context vem do /models (a API manda para todos os 58). O default so
+        // cobre modelo vindo do fallback offline ou mudanca de shape da API.
+        context: source.context_length ?? DEFAULT_CONTEXT_TOKENS,
+        // A API nao expoe max output: fica o mapa curto + default.
         output: MAX_OUTPUT[source.id] ?? DEFAULT_OUTPUT_TOKENS,
       },
       // Sem `cost` o opencode multiplica os tokens por zero e a TUI mostra $0.00.
@@ -362,11 +316,17 @@ async function discover(apiKey: string, log: Logger): Promise<CommandCodeModel[]
 
     const vision = models.filter((model) => inputModalities(model).includes("image"))
     const unknown = models.filter((model) => !CATALOG[model.id]).map((model) => model.id)
+    // Se a API parar de mandar context_length, os modelos caem no default de 200k
+    // silenciosamente. Melhor gritar no log do que truncar contexto sem aviso.
+    const semContexto = models.filter((model) => !model.context_length).map((model) => model.id)
     await log("info", `${models.length} modelos descobertos (${vision.length} com attachment).`)
     if (unknown.length > 0) {
       // Modelo fora do snapshot: caiu no heuristico. Vale conferir em
       // commandcode.ai/models e atualizar a tabela CAPABILITIES.
       await log("warn", `${unknown.length} modelo(s) fora do snapshot do catalogo`, { ids: unknown.join(", ") })
+    }
+    if (semContexto.length > 0) {
+      await log("warn", `${semContexto.length} modelo(s) sem context_length na API`, { ids: semContexto.join(", ") })
     }
     return models
   } catch (error) {

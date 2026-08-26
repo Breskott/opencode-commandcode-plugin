@@ -54,8 +54,9 @@ const REASONING_EFFORTS: Readonly<Record<string, readonly string[]>> = {
 // e "auto"/nao-reasoning e fica SEM variant (o modelo decide), como no CLI oficial.
 const DEFAULT_EFFORTS: readonly string[] = ["low", "medium", "high"]
 
-// Ultimo recurso: so valem quando nem o /models nem os mapas por modelo
-// (CONTEXT_WINDOW / MAX_OUTPUT, definidos abaixo) tiverem o valor.
+// Ultimo recurso. O /models devolve context_length para todos os modelos, entao
+// DEFAULT_CONTEXT_TOKENS so entra em cena se a API mudar de shape ou se o
+// provider subir pelo fallback offline (que so tem os ids).
 const DEFAULT_CONTEXT_TOKENS = 200_000
 const DEFAULT_OUTPUT_TOKENS = 32_000
 
@@ -141,70 +142,6 @@ const CATALOG: Readonly<Record<string, ModelSpec>> = {
   "zai-org/GLM-5.3": { vision: false, reasoning: true, cost: { input: 1.4, output: 4.4, cache_read: 0.26 } },
 }
 
-// Context window (tokens) por modelo — snapshot commandcode.ai/models + docs do
-// plano GOAT (commandcode.ai/docs/plans/goat). Fallback usado quando o /models nao
-// mandar context_length. O valor da API (quando vem) SEMPRE vence este mapa; este
-// mapa vence o DEFAULT chapado. Ids sem entrada aqui caem em DEFAULT_CONTEXT_TOKENS.
-const CONTEXT_WINDOW: Readonly<Record<string, number>> = {
-  "claude-fable-5": 1_000_000,
-  "claude-haiku-4-5-20251001": 200_000,
-  "claude-opus-4-7": 1_000_000,
-  "claude-opus-4-8": 1_000_000,
-  "claude-opus-5": 1_000_000,
-  "claude-sonnet-4-6": 1_000_000,
-  "claude-sonnet-5": 1_000_000,
-  "deepseek/deepseek-v4-flash": 1_000_000,
-  "deepseek/deepseek-v4-flash-vision-exp": 1_000_000,
-  "deepseek/deepseek-v4-pro": 1_000_000,
-  "google/gemini-3.1-flash-lite": 1_000_000,
-  "google/gemini-3.5-flash": 1_000_000,
-  "google/gemini-3.5-flash-lite": 1_000_000,
-  "google/gemini-3.6-flash": 1_000_000,
-  "google/gemini-3.7-flash": 1_048_576,
-  "gpt-5.3-codex": 400_000,
-  "gpt-5.4": 400_000,
-  "gpt-5.4-mini": 400_000,
-  "gpt-5.5": 400_000,
-  "gpt-5.6-luna": 1_050_000,
-  "gpt-5.6-sol": 1_050_000,
-  "gpt-5.6-terra": 1_050_000,
-  "meta/muse-spark-1.1": 1_048_576,
-  "meta/muse-spark-1.2": 1_048_576,
-  "meta/muse-spark-1.2-contributor": 1_048_576,
-  "MiniMaxAI/MiniMax-M2.5": 200_000,
-  "MiniMaxAI/MiniMax-M2.7": 200_000,
-  "MiniMaxAI/MiniMax-M3": 1_000_000,
-  "moonshotai/Kimi-K2.5": 256_000,
-  "moonshotai/Kimi-K2.6": 256_000,
-  "moonshotai/Kimi-K2.7-Code": 256_000,
-  "moonshotai/Kimi-K2.7-Code-Highspeed": 262_000,
-  "moonshotai/Kimi-K3": 1_000_000,
-  "nvidia/nemotron-3-ultra-550b-a55b": 1_000_000,
-  "poolside/laguna-s-2.1-free": 256_000,
-  "Qwen/Qwen3.6-Max-Preview": 200_000,
-  "Qwen/Qwen3.7-Flash": 1_000_000,
-  "Qwen/Qwen3.7-Max": 1_000_000,
-  "Qwen/Qwen3.7-Plus": 1_000_000,
-  "Qwen/Qwen3.8-27B": 262_144,
-  "Qwen/Qwen3.8-Max": 1_000_000,
-  "sakana/fugu-ultra": 1_000_000,
-  "stealth/ox-alpha": 1_048_576,
-  "stepfun/Step-3.5-Flash": 1_000_000,
-  "stepfun/Step-3.7-Flash": 256_000,
-  "tencent/hy3-paid": 262_144,
-  "thinkingmachines/inkling": 256_000,
-  "thinkingmachines/inkling-small": 1_000_000,
-  "xai/grok-4.5": 500_000,
-  "xai/grok-4.6": 500_000,
-  "xiaomi/mimo-v2.5": 1_000_000,
-  "xiaomi/mimo-v2.5-pro": 1_000_000,
-  "zai-org/GLM-5": 200_000,
-  "zai-org/GLM-5.1": 200_000,
-  "zai-org/GLM-5.2": 1_000_000,
-  "zai-org/GLM-5.2-Fast": 1_000_000,
-  "zai-org/GLM-5.3": 1_000_000,
-}
-
 // maxOutput conhecido do snapshot. O /models da Command Code NAO devolve output e
 // nem o site publica cap por modelo, entao o resto usa DEFAULT_OUTPUT_TOKENS.
 const MAX_OUTPUT: Readonly<Record<string, number>> = {
@@ -234,6 +171,19 @@ const MODEL_OVERRIDES: Readonly<Record<string, { input?: Modality[]; tool_call?:
  *   2. CATALOG (snapshot do site oficial)
  *   3. prefixo do id (modelo novo, ainda sem snapshot)
  */
+/**
+ * Nome de exibicao. Modelo cujo id contem "free" (ex: poolside/laguna-s-2.1-free)
+ * ganha o sufixo " Free", ja que a API manda o nome limpo ("Laguna S 2.1") e nao
+ * da para distinguir gratuito de pago na lista da TUI. Idempotente: se a Command
+ * Code passar a mandar "Free" no proprio nome, nao duplica.
+ */
+function displayName(model: CommandCodeModel): string {
+  const base = model.name ?? model.id
+  const isFree = /(^|[^a-z])free([^a-z]|$)/i.test(model.id)
+  if (!isFree || /(^|\s)free(\s|$)/i.test(base)) return base
+  return `${base} Free`
+}
+
 function inputModalities(id: string): Modality[] {
   const override = MODEL_OVERRIDES[id]?.input
   if (override && override.length > 0) return [...new Set<Modality>(["text", ...override])]
@@ -323,14 +273,16 @@ export function applyCatalog(
 
   for (const source of models) {
     catalog.model.update(PROVIDER_ID, source.id, (model) => {
-      model.name = source.name ?? source.id
+      model.name = displayName(source)
       const m = model as unknown as Record<string, unknown>
       m.package = AISDK_PACKAGE
       m.settings = settings
       model.api = { id: source.id, ...api }
       model.limit = {
-        // Precedencia: valor ao vivo do /models > snapshot por modelo > default.
-        context: source.context_length ?? CONTEXT_WINDOW[source.id] ?? DEFAULT_CONTEXT_TOKENS,
+        // Context vem do /models (a API manda para todos os 58). O default so
+        // cobre modelo vindo do fallback offline ou mudanca de shape da API.
+        context: source.context_length ?? DEFAULT_CONTEXT_TOKENS,
+        // A API nao expoe max output: fica o mapa curto + default.
         output: model.limit?.output ?? MAX_OUTPUT[source.id] ?? DEFAULT_OUTPUT_TOKENS,
       }
       // "o aceite de arquivos" + "imagens": no v2 nao ha flag `attachment`; o
@@ -403,7 +355,17 @@ export default define({
         discovered = next
         signature = nextSignature
         await ctx.catalog.reload()
+        const semContexto = next.filter((model) => !model.context_length).map((model) => model.id)
         console.info(`[commandcode] ${next.length} modelos descobertos.`)
+        // Se a API parar de mandar context_length, os modelos caem no default de
+        // 200k silenciosamente. Melhor gritar no log do que truncar sem aviso.
+        if (semContexto.length > 0) {
+          console.warn(`[commandcode] ${semContexto.length} modelo(s) sem context_length:`, semContexto.join(", "))
+        }
+        const fora = next.filter((model) => !CATALOG[model.id]).map((model) => model.id)
+        if (fora.length > 0) {
+          console.warn(`[commandcode] ${fora.length} modelo(s) fora do snapshot (sem custo/vision):`, fora.join(", "))
+        }
       } catch (error) {
         console.warn("[commandcode] descoberta de modelos falhou:", error)
       } finally {
