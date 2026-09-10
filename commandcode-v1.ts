@@ -719,4 +719,14 @@ export const CommandCodePlugin: Plugin = async ({ client }) => {
   }
 }
 
-export default CommandCodePlugin
+// Forma v1 de modulo de plugin (`{ id, server }`). Obrigatoria aqui: sem ela o
+// loader legado do opencode enumera TODA funcao exportada deste arquivo
+// (fetchModels, applyConfig, ...) e tenta chama-las como factory de plugin, o
+// que polui o log com "failed to load plugin". Com `server` presente o loader
+// usa so o factory abaixo.
+const plugin = {
+  id: PROVIDER_ID,
+  server: CommandCodePlugin,
+}
+
+export default plugin

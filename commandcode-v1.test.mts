@@ -203,3 +203,13 @@ test("includes GPT-6 Astra while the live models endpoint lags", async () => {
     else process.env.CMD_API_KEY = originalApiKey
   }
 })
+
+test("default export uses the v1 { id, server } module shape", async () => {
+  // Sem esse shape o loader legado enumera todas as funcoes exportadas
+  // (fetchModels, applyConfig, ...) e tenta chama-las como factory de plugin.
+  const mod = (await import("./commandcode-v1.ts")) as { default: { id?: string; server?: unknown; tui?: unknown } }
+  assert.equal(typeof mod.default, "object")
+  assert.equal(mod.default.id, "commandcode")
+  assert.equal(typeof mod.default.server, "function")
+  assert.equal(mod.default.tui, undefined)
+})
