@@ -54,6 +54,8 @@ A standalone **TUI plugin** that shows token throughput in the terminal UI, on t
 
 It does not depend on the provider plugins and does not touch the Command Code client. TUI only — the web UI does not render TUI plugins.
 
+> **Troubleshooting:** the package pins `@opentui/core` / `@opentui/solid` to `0.4.5`, the version bundled into OpenCode 1.18.x, so the plugin never conflicts with the embedded runtime. If you still see `Environment variable "OPENTUI_FORCE_WCWIDTH" is already registered with different configuration.` in the TUI console, your package cache holds a mismatched copy: delete `~/.cache/opencode/packages/opencode-commandcode-plugin@git+https_` and restart. As a fallback that always works, copy `tui-tps.tsx` into `~/.config/opencode/tui/` and point `tui.json` at it (`{ "plugin": ["./tui/tui-tps.tsx"] }`) — a file outside `node_modules` resolves everything against the host runtime.
+
 ---
 
 ## Requirements
@@ -119,7 +121,7 @@ opencode plugin "opencode-commandcode-plugin@git+https://github.com/Breskott/ope
 
 > Keep the `opencode-commandcode-plugin@` prefix in the spec. Without it OpenCode cannot cache the git package and re-clones the repo on every start (boots go from ~2s to ~10s). The same spec in both files is expected: `opencode.json` loads the `./server` entry, `tui.json` loads the `./tui` entry.
 
-**OpenCode 2.x (beta):** the package server entry is `commandcode-v1.ts` (OpenCode 1.x). For OpenCode 2, install manually: download `commandcode-v2.ts` and place it in `~/.config/opencode/plugin/` (Windows: `%USERPROFILE%\.config\opencode\plugin\`). OpenCode auto-loads every `.ts` / `.js` in that directory. The TPS meter works there too, via `tui.json`.
+**OpenCode 2.x (beta):** the package entry point (`server.ts`) speaks both runtimes — OpenCode 1.x runs the hook-based factory, OpenCode 2.x runs the catalog plugin. The same install command works for both; `commandcode-v2.ts` stays in the repo for manual installs. Validated against opencode2 `0.0.0-beta-19425`.
 
 <details>
 <summary>Manual install for OpenCode 1.x (without git)</summary>

@@ -54,6 +54,8 @@ Um **TUI plugin** standalone que mostra a vazão de tokens na TUI, no canto dire
 
 Ele não depende dos plugins de provider e não toca no cliente da Command Code. Só TUI — a interface web não renderiza TUI plugins.
 
+> **Troubleshooting:** o pacote fixa `@opentui/core` / `@opentui/solid` em `0.4.5`, a versão embutida no OpenCode 1.18.x, então o plugin nunca conflita com o runtime do host. Se ainda aparecer `Environment variable "OPENTUI_FORCE_WCWIDTH" is already registered with different configuration.` no console da TUI, o cache do pacote tem uma cópia fora de versão: apague `~/.cache/opencode/packages/opencode-commandcode-plugin@git+https_` e reinicie. Como fallback que sempre funciona, copie o `tui-tps.tsx` para `~/.config/opencode/tui/` e aponte o `tui.json` pra lá (`{ "plugin": ["./tui/tui-tps.tsx"] }`) — um arquivo fora do `node_modules` resolve tudo pelo runtime do host.
+
 ---
 
 ## Pré-requisitos
@@ -119,7 +121,7 @@ O `-g` grava na sua config global (`~/.config/opencode`). Sem o `-g` ele instala
 
 > Mantenha o prefixo `opencode-commandcode-plugin@` na spec. Sem ele o OpenCode não consegue cachear o pacote git e re-clona o repositório a cada start (o boot vai de ~2s pra ~10s). A mesma spec nos dois arquivos é esperado: o `opencode.json` carrega o entry `./server`, o `tui.json` carrega o `./tui`.
 
-**OpenCode 2.x (beta):** o entry de server do pacote é o `commandcode-v1.ts` (OpenCode 1.x). Pro OpenCode 2, instale manualmente: baixe `commandcode-v2.ts` e coloque em `~/.config/opencode/plugin/` (Windows: `%USERPROFILE%\.config\opencode\plugin\`). O OpenCode carrega todo `.ts` / `.js` desse diretório automaticamente. O medidor de TPS também funciona lá, via `tui.json`.
+**OpenCode 2.x (beta):** o entry de server do pacote (`server.ts`) fala os dois runtimes — no OpenCode 1.x roda o factory de hooks, no OpenCode 2.x roda o plugin de catálogo. O mesmo comando de instalação serve para os dois; o `commandcode-v2.ts` continua no repo para instalação manual. Validado contra o opencode2 `0.0.0-beta-19425`.
 
 <details>
 <summary>Instalação manual pro OpenCode 1.x (sem git)</summary>
