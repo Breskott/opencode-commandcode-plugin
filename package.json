@@ -1,11 +1,11 @@
 {
   "name": "opencode-commandcode-plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Command Code gateway provider for OpenCode (server plugin) plus a standalone TPS meter for the TUI",
   "type": "module",
   "license": "MIT",
   "exports": {
-    "./server": "./commandcode-v1.ts",
+    "./server": "./server.ts",
     "./tui": "./tui-tps.tsx"
   },
   "peerDependencies": {
