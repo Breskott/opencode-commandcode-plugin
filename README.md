@@ -6,16 +6,17 @@
 
 > 🇧🇷 **[Versão em Português (Brasil)](README.pt-BR.md)**
 
-Plugins that wire the [Command Code](https://commandcode.ai) gateway into [OpenCode](https://opencode.ai) as a first-class provider.
+Plugins that wire the [Command Code](https://commandcode.ai) gateway into [OpenCode](https://opencode.ai) as a first-class provider, plus a standalone tokens-per-second meter for the TUI.
 
-This repo ships **two plugins** — one for each OpenCode major:
+This repo ships **three files**:
 
-| File | OpenCode | Status |
+| File | OpenCode | What it is |
 | --- | --- | --- |
-| `commandcode-v1.ts` | **v1** (stable) | Use with OpenCode 1.x |
-| `commandcode-v2.ts` | **v2** (beta) | Use with OpenCode 2.x (beta) |
+| `commandcode-v1.ts` | **v1** (stable) | Command Code provider (server plugin) — use with OpenCode 1.x |
+| `commandcode-v2.ts` | **v2** (beta) | Command Code provider (server plugin) — use with OpenCode 2.x (beta) |
+| `tui-tps.tsx` | **TUI** | Optional tokens/sec meter (TUI plugin) — independent of the provider, works with either version |
 
-> Use **only one** of them, matching your OpenCode version. They differ in how providers and capabilities are declared; runtime behavior (live `/models` discovery plus a catalog resolved live from the npm package and the models page, with an embedded offline snapshot) is the same.
+> Use **only one** provider file, matching your OpenCode version. They differ in how providers and capabilities are declared; runtime behavior (live `/models` discovery plus a catalog resolved live from the npm package and the models page, with an embedded offline snapshot) is the same. `tui-tps.tsx` is standalone and can be combined with either.
 
 ---
 
@@ -43,11 +44,23 @@ Earlier versions shipped vision / cost / efforts as a hardcoded snapshot that ha
 
 ---
 
+## TPS meter (tui-tps.tsx)
+
+A standalone **TUI plugin** that shows token throughput in the terminal UI, on the bottom-right of the model line (`session_prompt_right` slot):
+
+- While the model is streaming: `~42.5 tok/s` — a live estimate from the incoming text deltas (5-second rolling window).
+- When the turn finishes: `57.7 tok/s` — the exact rate, real output tokens divided by generation time (same idea as OpenCode 2's built-in `session.tps`).
+- Shows nothing when there is no data.
+
+It does not depend on the provider plugins and does not touch the Command Code client. TUI only — the web UI does not render TUI plugins.
+
+---
+
 ## Requirements
 
 - Node.js + TypeScript (or Bun / Deno — anything your OpenCode setup runs)
 - A Command Code account with an API key
-- OpenCode installed
+- OpenCode installed (for the TPS meter: OpenCode 1.x with TUI plugin support; terminal UI only)
 
 ---
 
@@ -72,23 +85,54 @@ Open a new terminal afterwards so the variable loads into fresh sessions. Verify
 > - `Process` — current PowerShell session only (`$env:CMD_API_KEY = "..."`). Disappears when the window closes.
 > - `Machine` — all users on the PC. Requires an elevated PowerShell: `[Environment]::SetEnvironmentVariable("CMD_API_KEY", "...", "Machine")`. Only use this if the machine is yours or if other users will also run OpenCode with Command Code.
 
-### 2. Drop the plugin into `~/.config/opencode/plugin/`
+### 2. Install the plugin
 
-Download the file that matches your OpenCode version:
+The repo is an installable package (`package.json` exposes `./server` → `commandcode-v1.ts` and `./tui` → `tui-tps.tsx`), so OpenCode can install it straight from GitHub. Pick **one** of the two ways:
 
-- v1 → download `commandcode-v1.ts`
-- v2 → download `commandcode-v2.ts`
+**A. CLI (one command)**
 
-Place it in:
+```bash
+opencode plugin "opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git" -g
+```
 
-- **Windows:** `%USERPROFILE%\.config\opencode\plugin\`
-- **Linux / macOS:** `~/.config/opencode/plugin/`
+`-g` writes to your global config (`~/.config/opencode`). Without `-g` it installs into the current project's `.opencode/`. The command adds the plugin to `opencode.json` (provider) and, because the package also ships a TUI entry point, to `tui.json` (TPS meter).
 
-OpenCode auto-loads every `.ts` / `.js` in that directory.
+**B. Edit the config files yourself**
+
+`opencode.json` / `opencode.jsonc` — provider (global: `~/.config/opencode/opencode.jsonc`, or project root):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git"]
+}
+```
+
+`tui.json` — TPS meter, optional (global: `~/.config/opencode/tui.json`, or project `.opencode/tui.json`):
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": ["opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git"]
+}
+```
+
+> Keep the `opencode-commandcode-plugin@` prefix in the spec. Without it OpenCode cannot cache the git package and re-clones the repo on every start (boots go from ~2s to ~10s). The same spec in both files is expected: `opencode.json` loads the `./server` entry, `tui.json` loads the `./tui` entry.
+
+**OpenCode 2.x (beta):** the package server entry is `commandcode-v1.ts` (OpenCode 1.x). For OpenCode 2, install manually: download `commandcode-v2.ts` and place it in `~/.config/opencode/plugin/` (Windows: `%USERPROFILE%\.config\opencode\plugin\`). OpenCode auto-loads every `.ts` / `.js` in that directory. The TPS meter works there too, via `tui.json`.
+
+<details>
+<summary>Manual install for OpenCode 1.x (without git)</summary>
+
+Download `commandcode-v1.ts` (and optionally `tui-tps.tsx`) from this repo and drop them into `~/.config/opencode/plugins/` (Windows: `%USERPROFILE%\.config\opencode\plugins\`). If you install the TUI plugin manually, register the file in `tui.json` itself: `{ "plugin": ["./plugins/tui-tps.tsx"] }`.
+
+If you previously copied files by hand and now switch to the git install, delete the old copies — otherwise the plugin loads twice.
+
+</details>
 
 ### 3. Restart OpenCode
 
-Done. The `commandcode` provider appears in the model picker with every Command Code model, the right context window, correct capabilities, and reasoning variants where applicable.
+Done. The `commandcode` provider appears in the model picker with every Command Code model, the right context window, correct capabilities, and reasoning variants where applicable. With `tui.json` configured, the TPS meter shows up next to the model line.
 
 ---
 
@@ -116,7 +160,7 @@ Done. The `commandcode` provider appears in the model picker with every Command 
 
 ## How the API key is read
 
-Both plugins read the key from `process.env.CMD_API_KEY`. **There is no `npm install`, no `dotenv`, no `opencode.json` involved** — set the variable and restart OpenCode.
+Both plugins read the key from `process.env.CMD_API_KEY`. There is no `dotenv` and no manual `npm install` — OpenCode installs the plugin itself from the config spec, and the key comes from the environment. Set the variable and restart OpenCode.
 
 If `CMD_API_KEY` is missing, the plugin just logs a warning (`provider not loaded`) and moves on. OpenCode does not crash.
 
@@ -145,13 +189,37 @@ Models that fall to tier 4 enter with conservative defaults (text-only, `$0.00` 
 
 ---
 
-## Updating the catalog
+## Updating
 
-You normally don't need to. New models, price changes, and capability fixes are picked up automatically from the npm `models.md` and the models page within the 6-hour cache window.
+**Model catalog — automatic.** New models, price changes, and capability fixes are picked up automatically from the npm `models.md` and the models page within the 6-hour cache window. No update needed. To force an immediate refresh, delete `~/.cache/opencode/commandcode-catalog.json` and restart OpenCode.
 
-To force an immediate refresh, delete the disk cache (`~/.cache/opencode/commandcode-catalog.json`) and restart OpenCode.
+**Plugin code — one cache clear.** OpenCode keeps the first git clone in its package cache, so `git push`es to this repo do not reach you on their own. To pull the latest code, delete the cached package and restart — OpenCode re-clones automatically:
 
-Edit the embedded snapshot only when:
+Windows (PowerShell):
+
+```powershell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\opencode\packages\opencode-commandcode-plugin@git+https_"
+```
+
+Linux / macOS:
+
+```bash
+rm -rf ~/.cache/opencode/packages/opencode-commandcode-plugin@git+https*
+```
+
+**Pin a commit — optional.** For reproducible installs, append a commit hash to the spec:
+
+```
+opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git#<commit>
+```
+
+Each pinned commit gets its own cache folder, and changing the hash is an update. The hash is the short SHA from the [commit list](https://github.com/Breskott/opencode-commandcode-plugin/commits/main).
+
+---
+
+## Updating the embedded snapshot
+
+The embedded `CATALOG` / `REASONING_EFFORTS` / `MAX_OUTPUT` tables are the offline fallback, not the source of truth. Edit them only when:
 
 1. You want the offline fallback to be current — update `CATALOG` and `REASONING_EFFORTS` from <https://commandcode.ai/models> and the npm `models.md`, and bump the snapshot date/version in the header comment.
 2. A model's max output needs pinning — add it to `MAX_OUTPUT` (neither the API nor the docs expose it).
