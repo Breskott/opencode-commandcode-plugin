@@ -9,10 +9,11 @@
     "./tui": "./tui-tps.tsx"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "*",
+    "@opencode-ai/plugin": "*"
+  },
+  "dependencies": {
     "@opentui/core": "0.4.5",
-    "@opentui/solid": "0.4.5",
-    "solid-js": "*"
+    "@opentui/solid": "0.4.5"
   },
   "engines": {
     "opencode": ">=1.3.14"
