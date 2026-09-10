@@ -89,7 +89,7 @@ Reabra o terminal depois pra variável carregar nas novas sessões. Verifique co
 
 ### 2. Instale o plugin
 
-O repositório é um pacote instalável (`package.json` expõe `./server` → `commandcode-v1.ts` e `./tui` → `tui-tps.tsx`), então o OpenCode consegue instalar direto do GitHub. Escolha **uma** das duas formas:
+O repositório é um pacote instalável (`package.json` expõe `./server` → `server.ts`, que serve tanto o OpenCode 1.x quanto o 2.x, e `./tui` → `tui-tps.tsx`), então o OpenCode consegue instalar direto do GitHub. Escolha **uma** das duas formas:
 
 **A. CLI (um comando)**
 
@@ -121,7 +121,21 @@ O `-g` grava na sua config global (`~/.config/opencode`). Sem o `-g` ele instala
 
 > Mantenha o prefixo `opencode-commandcode-plugin@` na spec. Sem ele o OpenCode não consegue cachear o pacote git e re-clona o repositório a cada start (o boot vai de ~2s pra ~10s). A mesma spec nos dois arquivos é esperado: o `opencode.json` carrega o entry `./server`, o `tui.json` carrega o `./tui`.
 
-**OpenCode 2.x (beta):** o entry de server do pacote (`server.ts`) fala os dois runtimes — no OpenCode 1.x roda o factory de hooks, no OpenCode 2.x roda o plugin de catálogo. O mesmo comando de instalação serve para os dois; o `commandcode-v2.ts` continua no repo para instalação manual. Validado contra o opencode2 `0.0.0-beta-19425`.
+**OpenCode 2.x (beta):** o mesmo pacote funciona lá — o `server.ts` detecta o runtime e carrega o plugin de catálogo do v2 automaticamente. Instale com o CLI do v2 (validado contra o opencode2 `0.0.0-beta-19425`):
+
+```bash
+opencode2 plugin add "opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git"
+```
+
+Ou adicione a spec na config do v2 na mão (`~/.config/opencode/opencode.json` — repare na chave `plugins` no plural, diferente do `plugin` do v1):
+
+```json
+{
+  "plugins": ["opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git"]
+}
+```
+
+O medidor de TPS não é necessário no OpenCode 2: ele já tem nativo no rodapé das mensagens (`session.tps`, ligado por padrão).
 
 <details>
 <summary>Instalação manual pro OpenCode 1.x (sem git)</summary>
@@ -139,6 +153,8 @@ Pronto. O provider `commandcode` aparece no seletor de modelos com todos os mode
 ---
 
 ## Qual arquivo usar? v1 ou v2
+
+Se você instala pelo pacote git não precisa escolher arquivo — o `server.ts` despacha automaticamente pro runtime que estiver rodando. A tabela abaixo explica o que cada arquivo faz por dentro e vale pra instalação manual (sem git):
 
 | | `commandcode-v1.ts` | `commandcode-v2.ts` |
 | --- | --- | --- |
@@ -217,6 +233,8 @@ opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode
 
 Cada commit pinado ganha sua própria pasta de cache, e trocar o hash é a atualização. O hash é o SHA curto da [lista de commits](https://github.com/Breskott/opencode-commandcode-plugin/commits/main).
 
+**OpenCode 2.x:** rode `opencode2 plugin update` (passando a spec como argumento pra atualizar um plugin específico), ou apague `~/.cache/opencode/npm/git-opencode-commandcode-plugin-*` e reinicie.
+
 ---
 
 ## Atualizando o snapshot embutido
@@ -255,9 +273,9 @@ Se a descoberta falhar na primeira chamada (v1), o plugin **não** derruba o Ope
 
 ## Compatibilidade
 
-- **OpenCode 1.x** → use `commandcode-v1.ts`.
-- **OpenCode 2.x (beta)** → use `commandcode-v2.ts`.
-- Misturar (v1 em OpenCode 2, ou v2 em OpenCode 1) **não funciona** — os tipos `Config` / `Plugin` / `define` / `CatalogDraft` são incompatíveis.
+- **OpenCode 1.x** → instale a spec do pacote; o `server.ts` serve o factory de hooks do v1.
+- **OpenCode 2.x (beta)** → mesmo pacote, mesma spec; o `server.ts` serve o plugin de catálogo do v2.
+- Instalar arquivos na mão é específico por versão: `commandcode-v1.ts` é pro OpenCode 1.x e `commandcode-v2.ts` pro OpenCode 2.x. Misturar arquivos manuais (v1 no OpenCode 2, ou v2 no OpenCode 1) **não funciona** — os tipos `Config` / `Plugin` / `define` / `CatalogDraft` são incompatíveis.
 
 ---
 
