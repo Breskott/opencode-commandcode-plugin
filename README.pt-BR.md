@@ -15,7 +15,7 @@ Este repositório traz **dois plugins** — um pra cada major do OpenCode:
 | `commandcode-v1.ts` | **v1** (stable) | Use com OpenCode 1.x |
 | `commandcode-v2.ts` | **v2** (beta) | Use com OpenCode 2.x (beta) |
 
-> Use **apenas um** deles, de acordo com a sua versão do OpenCode. Os dois diferem na forma de declarar provider e capabilities; o comportamento de runtime (descoberta ao vivo do `/models`, catálogo embutido pra vision / cost / reasoning efforts) é o mesmo.
+> Use **apenas um** deles, de acordo com a sua versão do OpenCode. Os dois diferem na forma de declarar provider e capabilities; o comportamento de runtime (descoberta ao vivo do `/models` + catálogo resolvido ao vivo do pacote npm e da página de modelos, com snapshot embutido de fallback offline) é o mesmo.
 
 ---
 
@@ -26,15 +26,20 @@ A Command Code é um gateway OpenAI-compatible focado em coding agents. Ela exp�
 Os dois plugins fazem a mesma coisa:
 
 1. **Descobrem os modelos ao vivo** em `GET https://api.commandcode.ai/provider/v1/models` — `id`, `name` e `context_length` vêm direto da API.
-2. **Cruzam cada id com um catálogo estático embutido** (`CATALOG`) que guarda o que a API não devolve: `vision`, `reasoning` e `cost` (por 1M de tokens, USD).
-3. **Anexam as variants de reasoning effort** a partir de `REASONING_EFFORTS`, por id de modelo, pra que os modelos com reasoning tenham o seletor `low / medium / high / xhigh / max`.
+2. **Resolvem o resto do catálogo em runtime** a partir do que a própria Command Code publica:
+   - **`models.md` dentro do pacote npm [`command-code`](https://www.npmjs.com/package/command-code)** — reasoning efforts, preços, janela de contexto e nomes de exibição. A versão mais recente é resolvida no registry do npm e o arquivo é servido via unpkg, com jsdelivr de fallback.
+   - **<https://commandcode.ai/models>** — as capabilities `Vision` / `Reasoning` por modelo.
+   - Os dois ficam em cache em disco por 6 horas (`~/.cache/opencode/commandcode-catalog.json`, respeita `XDG_CACHE_HOME`), então reiniciar não bate na rede de novo.
+3. **Enriquecem cada modelo com esses dados**: custo real por 1M de tokens, capability de attachment (vision) e variants de reasoning effort (`low / medium / high / xhigh / max` onde o modelo suporta).
 4. **Registram o provider `commandcode`** no OpenCode, com `baseURL` e `apiKey` apontando pra Command Code.
 
-Resultado: todos os modelos da Command Code aparecem na TUI do OpenCode com a janela de contexto certa (vinda da API), a capability de attachment / tools certa (do catálogo + heurística de prefixo), o custo real por 1M de tokens (do catálogo), e variants de reasoning onde o modelo suporta.
+Resultado: todos os modelos da Command Code aparecem na TUI do OpenCode com a janela de contexto certa (vinda da API), metadados de catálogo (efforts / cost / vision) sempre frescos sem editar o plugin, e variants de reasoning onde o modelo suporta.
 
 ### O que mudou nesta versão
 
-Antes os plugins também mantinham uma tabela hardcoded `CONTEXT_WINDOW` / `MAX_OUTPUT` por id de modelo. Esses dados agora vêm da resposta ao vivo de `/models` (e de um `MAX_OUTPUT` curtinho pros dois modelos em que a API não expõe max output, mais um par `DEFAULT_*` como último recurso). Reasoning efforts, flag de vision e custo continuam precisando ser declarados manualmente porque a API não expõe nenhum dos três.
+Antes os plugins traziam vision / cost / efforts num snapshot hardcoded que precisava ser editado na mão sempre que a Command Code mudava algo. Esse snapshot agora é **só fallback**: o plugin resolve o catálogo em runtime a partir do pacote npm e da página de modelos, então modelos novos, mudanças de preço e correções de capability se propagam sozinhos. Offline, a cadeia de fallback é: último cache em disco → snapshot `CATALOG` embutido.
+
+O `CONTEXT_WINDOW` também deixou de existir — o contexto vem da resposta ao vivo de `/models`. Um `MAX_OUTPUT` curtinho mais o par `DEFAULT_*` continuam como último recurso, porque nem a API nem a documentação expõem max output.
 
 ---
 
@@ -94,17 +99,18 @@ Pronto. O provider `commandcode` aparece no seletor de modelos com todos os mode
 | **Versão do OpenCode** | 1.x (stable) | 2.x (beta) |
 | **API de import** | `import type { Config, Plugin } from "@opencode-ai/plugin"` | `import { define, type CatalogDraft } from "@opencode-ai/plugin/v2/promise"` |
 | **Como registra o provider** | `config.provider[id] = {...}` direto via hook `config` | `ctx.catalog.transform(catalog => ...)` |
-| **Como recarrega modelos** | Discovery dentro do `config` (cache em memória de 5 min) | Discovery em background + `catalog.reload()` quando a lista de ids muda |
+| **Como recarrega modelos** | Discovery dentro do `config` (cache em memória de 5 min) | Discovery em background + `catalog.reload()` quando a lista enriquecida de modelos muda |
+| **Resolução do catálogo** | Ao vivo: `models.md` do pacote npm `command-code` + capabilities de `commandcode.ai/models`, cache em disco de 6h | Igual |
 | **Campo do package AI SDK** | `npm: "@ai-sdk/openai-compatible"` | `package: "aisdk:@ai-sdk/openai-compatible"` (com prefixo `aisdk:`, setado no nível do provider e em cada modelo) |
 | **Bloco de attachment** | `attachment: true` + `modalities: { input: ["text","image"] }` | `capabilities: { tools, input: ["text","image"], output: ["text"] }` (sem flag `attachment`) |
 | **Formato de `cost`** | Objeto `{ input, output, cache_read, cache_write }` | Array `ModelCost[]` com `{ input, output, cache: { read, write } }` |
 | **`variants` (reasoning)** | Objeto nomeado `{ low: { reasoningEffort: "low" }, ... }` | Array `{ id, headers: {}, body: { reasoningEffort } }[]` |
 | **`limit.context`** | `model.context_length` do `/models`, cai em `DEFAULT_CONTEXT_TOKENS` (200k) | Igual |
-| **`limit.output`** | `MAX_OUTPUT[id]` (2 entradas) → `DEFAULT_OUTPUT_TOKENS` (32k) | Igual |
+| **`limit.output`** | `MAX_OUTPUT[id]` (mapa curto) → `DEFAULT_OUTPUT_TOKENS` (32k) | Igual |
 | **API bloqueante?** | Sim (await dentro de `config`) | Não (transform é síncrono; discovery roda em background a cada 5 min) |
-| **Fallback quando `/models` falha** | `FALLBACK_MODELS` = `Object.keys(CATALOG)` (só os ids, sem context_length) | `discovered` fica vazio; o provider registra mas nenhum modelo aparece até o próximo refresh bem-sucedido |
+| **Fallback quando `/models` falha** | `FALLBACK_MODELS` = `Object.keys(CATALOG)` (só os ids, sem context_length). Falha do catálogo remoto: cache em disco vencido → snapshot `CATALOG` embutido | `discovered` fica vazio; o provider registra mas nenhum modelo aparece até o próximo refresh bem-sucedido. A cadeia de fallback do catálogo é a mesma do v1 |
 
-**Resumo:** o v2 troca a forma de declarar o provider (passa a usar o `catalog` oficial do opencode2 com prefixo `aisdk:`), transforma `cost` em array, tira o `attachment` (substituído por `capabilities.input`) e tira a discovery do caminho de boot, então o startup do OpenCode nunca trava esperando a API da Command Code. As fontes de dados (`/models` pra ids e context, `CATALOG` pra vision / cost, `REASONING_EFFORTS` pra variants) são as mesmas nos dois.
+**Resumo:** o v2 troca a forma de declarar o provider (passa a usar o `catalog` oficial do opencode2 com prefixo `aisdk:`), transforma `cost` em array, tira o `attachment` (substituído por `capabilities.input`) e tira a discovery do caminho de boot, então o startup do OpenCode nunca trava esperando a API da Command Code. As fontes de dados (`/models` pra ids e contexto; `models.md` do npm + `commandcode.ai/models` pra efforts / cost / vision, com `CATALOG` como fallback offline) são as mesmas nos dois.
 
 ---
 
@@ -126,27 +132,32 @@ const MODEL_OVERRIDES = {
 }
 ```
 
-No v2 o override aceita `{ input?: Modality[], tool_call?: boolean }`. No v1, aceita também `reasoning?: boolean`.
+As duas versões aceitam `{ input?: Modality[], tool_call?: boolean, reasoning?: boolean }`.
 
 A cascata de decisão é:
 
 1. `MODEL_OVERRIDES[id]` (seu override manual — sempre vence)
-2. `CATALOG[id]` (snapshot estático embutido)
-3. Prefixo do id (heurística pra modelos novos lançados depois do snapshot)
+2. Catálogo remoto (capabilities de <https://commandcode.ai/models>; efforts / cost / nomes do `models.md` do npm)
+3. `CATALOG[id]` (snapshot estático embutido, fallback offline)
+4. Prefixo do id (heurística pra modelos novos sem dado remoto nem embutido)
 
-Modelos que caem no nível 3 entram com defaults conservadores (só texto, sem reasoning, custo `$0.00`) e disparam um aviso no log: `N modelo(s) fora do snapshot do catalogo`.
+Modelos que caem no nível 4 entram com defaults conservadores (só texto, custo `$0.00`) e disparam um aviso no log: `N modelo(s) fora do snapshot do catalogo`. Reasoning efforts seguem a mesma ordem; modelo sem efforts conhecidos fica sem seletor de variant (o modelo decide) — exceto ids desconhecidos no v2, que ganham o genérico `low / medium / high`.
 
 ---
 
 ## Atualizando o catálogo
 
-Quando a Command Code lançar modelos ou mudar preço / capabilities:
+Normalmente você não precisa. Modelos novos, mudanças de preço e correções de capability são capturados automaticamente do `models.md` do npm e da página de modelos dentro da janela de cache de 6 horas.
 
-1. Confira a lista oficial em <https://commandcode.ai/models>.
-2. Edite as tabelas `CATALOG` e `REASONING_EFFORTS` no arquivo da sua versão. O `MAX_OUTPUT` só precisa ser tocado pro modelo raro cujo max output você queira pinar (a API não expõe).
-3. Abra um PR com a atualização (compare com a data do snapshot no comentário no topo).
+Pra forçar um refresh imediato, apague o cache em disco (`~/.cache/opencode/commandcode-catalog.json`) e reinicie o OpenCode.
 
-Você **não** precisa editar nada pra lista de modelos em si nem pra janela de contexto — ambos vêm do `/models` em runtime.
+Edite o snapshot embutido só quando:
+
+1. Você quiser manter o fallback offline atualizado — atualize `CATALOG` e `REASONING_EFFORTS` a partir de <https://commandcode.ai/models> e do `models.md` do npm, e atualize a data/versão do snapshot no comentário do topo.
+2. O max output de um modelo precisa ser pinado — adicione no `MAX_OUTPUT` (nem a API nem a documentação expõem).
+3. Você precisa forçar uma capability agora — use `MODEL_OVERRIDES` em vez de mexer no snapshot.
+
+Abra um PR se atualizar o snapshot.
 
 ---
 
@@ -160,13 +171,15 @@ Os dois plugins emitem as mesmas linhas de diagnóstico, só que pra destinos di
 Você verá linhas como:
 
 ```
-[commandcode] 58 modelos descobertos (44 com attachment).
+[commandcode] catalogo remoto 1.53.0: 70 modelos, 70 capabilities.
+[commandcode] 70 modelos descobertos (50 com attachment).
 [commandcode] 2 modelo(s) fora do snapshot do catalogo { ids: "modelo-novo-1, modelo-novo-2" }
 [commandcode] 1 modelo(s) sem context_length na API { ids: "..." }
-[commandcode] descoberta de modelos falhou: ...
+[commandcode] catalogo remoto indisponivel; mantendo ultimo cache.
+[commandcode] descoberta de modelos falhou, usando snapshot estatico { error: ... }
 ```
 
-Se a descoberta falhar na primeira chamada (v1), o plugin **não** derruba o OpenCode — ele cai pros ids do `CATALOG` e segue. No v2 o fallback é começar com a lista vazia; o próximo tick de refresh (5 minutos depois) tenta de novo.
+Se a descoberta falhar na primeira chamada (v1), o plugin **não** derruba o OpenCode — ele cai pros ids do `CATALOG` e segue. No v2 o fallback é começar com a lista vazia; o próximo tick de refresh (5 minutos depois) tenta de novo. Se só o catálogo remoto estiver fora, o plugin mantém o último cache em disco (ou o snapshot embutido) e o aviso `catalogo remoto indisponivel` aparece.
 
 ---
 
