@@ -46,11 +46,13 @@ O `CONTEXT_WINDOW` também deixou de existir — o contexto vem da resposta ao v
 
 ## Medidor de TPS (tui-tps.tsx)
 
-Um **TUI plugin** standalone que mostra a vazão de tokens na TUI, no canto direito da linha do modelo (slot `session_prompt_right`):
+Um **TUI plugin** standalone que mostra a vazão de tokens na TUI — no canto direito da linha do modelo no OpenCode 1.x (slot `session_prompt_right`) e no lado direito do rodapé do prompt no OpenCode 2.x (claim `prompt.footer`):
 
 - Durante o streaming: `~42.5 tok/s` — estimativa ao vivo a partir dos deltas de texto que chegam (janela rolante de 5 segundos).
 - Quando o turno termina: `57.7 tok/s` — a taxa exata, tokens de saída reais divididos pelo tempo de geração (mesma ideia do `session.tps` nativo do OpenCode 2).
 - Não mostra nada quando não há dado.
+
+O mesmo entry `./tui` serve os dois runtimes: o módulo exporta `{ id, tui, setup }` como default — o OpenCode 1.x chama `tui`, o OpenCode 2.x chama `setup` (o contrato de plugin V2). No OpenCode 2 o medidor complementa o `session.tps` nativo do rodapé das mensagens: o nativo só mostra a taxa final por mensagem, enquanto este mostra a estimativa ao vivo **durante** a geração.
 
 Ele não depende dos plugins de provider e não toca no cliente da Command Code. Só TUI — a interface web não renderiza TUI plugins.
 
@@ -135,7 +137,7 @@ Ou adicione a spec na config do v2 na mão (`~/.config/opencode/opencode.json` �
 }
 ```
 
-O medidor de TPS não é necessário no OpenCode 2: ele já tem nativo no rodapé das mensagens (`session.tps`, ligado por padrão).
+A entrada única em `plugins` carrega tanto o provider (`./server`) quanto o medidor de TPS (`./tui`). O OpenCode 2 também já traz um medidor nativo no rodapé das mensagens (`session.tps`, ligado por padrão) — o plugin adiciona a estimativa ao vivo do streaming no rodapé do prompt.
 
 <details>
 <summary>Instalação manual pro OpenCode 1.x (sem git)</summary>

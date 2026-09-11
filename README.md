@@ -46,11 +46,13 @@ Earlier versions shipped vision / cost / efforts as a hardcoded snapshot that ha
 
 ## TPS meter (tui-tps.tsx)
 
-A standalone **TUI plugin** that shows token throughput in the terminal UI, on the bottom-right of the model line (`session_prompt_right` slot):
+A standalone **TUI plugin** that shows token throughput in the terminal UI — on the bottom-right of the model line in OpenCode 1.x (`session_prompt_right` slot) and on the right side of the prompt footer in OpenCode 2.x (`prompt.footer` claim):
 
 - While the model is streaming: `~42.5 tok/s` — a live estimate from the incoming text deltas (5-second rolling window).
 - When the turn finishes: `57.7 tok/s` — the exact rate, real output tokens divided by generation time (same idea as OpenCode 2's built-in `session.tps`).
 - Shows nothing when there is no data.
+
+The same `./tui` entry serves both runtimes: the module default-exports `{ id, tui, setup }` — OpenCode 1.x calls `tui`, OpenCode 2.x calls `setup` (the V2 plugin contract). On OpenCode 2 the meter is complementary to the built-in `session.tps` footer: the native one only shows the final rate per message, while this one renders a live estimate **while** the model is generating.
 
 It does not depend on the provider plugins and does not touch the Command Code client. TUI only — the web UI does not render TUI plugins.
 
@@ -135,7 +137,7 @@ Or add the spec to the v2 config yourself (`~/.config/opencode/opencode.json` �
 }
 ```
 
-The TPS meter is not needed on OpenCode 2: it already ships a native throughput meter in the message footer (`session.tps`, on by default).
+The single `plugins` entry loads both the provider (`./server`) and the TPS meter (`./tui`). OpenCode 2 also ships a native throughput meter in the message footer (`session.tps`, on by default) — the plugin adds the live streaming estimate in the prompt footer.
 
 <details>
 <summary>Manual install for OpenCode 1.x (without git)</summary>
