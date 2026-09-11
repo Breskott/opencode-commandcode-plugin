@@ -17,8 +17,6 @@ Este repositório traz **três arquivos**:
 | `server.ts` | **ambos** | Entrypoint — escolhe a implementação certa por runtime |
 
 > Você nunca escolhe o arquivo: o `server.ts` exporta `{ id, server, setup }` — o OpenCode 1.x chama `server`, o OpenCode 2.x chama `setup`. Os dois diferem na forma de declarar provider e capabilities; o comportamento de runtime (descoberta ao vivo do `/models` + catálogo resolvido ao vivo do pacote npm e da página de modelos, com snapshot embutido de fallback offline) é o mesmo.
->
-> **Procurando o medidor de tokens por segundo?** Ele mudou pra um pacote próprio: [`opencode-tui-tps`](https://github.com/Breskott/opencode-tui-tps) — TUI plugin standalone, funciona no OpenCode 1.x e 2.x.
 
 ---
 
@@ -43,18 +41,6 @@ Resultado: todos os modelos da Command Code aparecem na TUI do OpenCode com a ja
 Antes os plugins traziam vision / cost / efforts num snapshot hardcoded que precisava ser editado na mão sempre que a Command Code mudava algo. Esse snapshot agora é **só fallback**: o plugin resolve o catálogo em runtime a partir do pacote npm e da página de modelos, então modelos novos, mudanças de preço e correções de capability se propagam sozinhos. Offline, a cadeia de fallback é: último cache em disco → snapshot `CATALOG` embutido.
 
 O `CONTEXT_WINDOW` também deixou de existir — o contexto vem da resposta ao vivo de `/models`. Um `MAX_OUTPUT` curtinho mais o par `DEFAULT_*` continuam como último recurso, porque nem a API nem a documentação expõem max output.
-
----
-
-## Medidor de TPS → migrou pro opencode-tui-tps
-
-O medidor de tokens por segundo vinha dentro deste pacote como `tui-tps.tsx`. Agora ele mora num repo próprio — [opencode-tui-tps](https://github.com/Breskott/opencode-tui-tps) — pra deixar o pacote do provider enxuto e o medidor instalável de forma independente, com qualquer provider.
-
-Instale junto (ou sozinho) — OpenCode 1.x pelo `tui.json`, OpenCode 2.x pelo `plugins`:
-
-```json
-{ "plugins": ["opencode-tui-tps@git+https://github.com/Breskott/opencode-tui-tps.git"] }
-```
 
 ---
 

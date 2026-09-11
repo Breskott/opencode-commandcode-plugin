@@ -17,8 +17,6 @@ This repo ships **three files**:
 | `server.ts` | **both** | Entrypoint — dispatches to the right implementation by runtime |
 
 > You never pick a file yourself: `server.ts` exports `{ id, server, setup }` — OpenCode 1.x calls `server`, OpenCode 2.x calls `setup`. They differ in how providers and capabilities are declared; runtime behavior (live `/models` discovery plus a catalog resolved live from the npm package and the models page, with an embedded offline snapshot) is the same.
->
-> **Looking for the tokens-per-second meter?** It moved to its own package: [`opencode-tui-tps`](https://github.com/Breskott/opencode-tui-tps) — standalone TUI plugin, works on OpenCode 1.x and 2.x.
 
 ---
 
@@ -43,18 +41,6 @@ End result: every Command Code model shows up in the OpenCode TUI with the right
 Earlier versions shipped vision / cost / efforts as a hardcoded snapshot that had to be edited by hand whenever Command Code changed something. That snapshot is now a **fallback only**: the plugin resolves the catalog at runtime from the npm package and the models page, so new models, price changes, and capability fixes propagate automatically. Offline, the fallback chain is: last disk cache → embedded `CATALOG` snapshot.
 
 `CONTEXT_WINDOW` no longer exists either — context comes from the live `/models` response. A small `MAX_OUTPUT` map plus a `DEFAULT_*` pair remain as last-resort values because neither the API nor the docs expose a max-output cap.
-
----
-
-## TPS meter → moved to opencode-tui-tps
-
-The tokens-per-second meter used to ship inside this package as `tui-tps.tsx`. It now lives in its own repo — [opencode-tui-tps](https://github.com/Breskott/opencode-tui-tps) — so the provider package stays lean and the meter can be installed independently, with any provider.
-
-Install it alongside (or instead of) this one — OpenCode 1.x via `tui.json`, OpenCode 2.x via `plugins`:
-
-```json
-{ "plugins": ["opencode-tui-tps@git+https://github.com/Breskott/opencode-tui-tps.git"] }
-```
 
 ---
 
