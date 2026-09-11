@@ -9,7 +9,7 @@
     "./tui": "./tui-tps.tsx"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "*"
+    "@opencode-ai/plugin": "^1.18.30"
   },
   "dependencies": {
     "@opentui/core": "0.4.5",

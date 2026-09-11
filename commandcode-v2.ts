@@ -1,4 +1,4 @@
-import { define, type CatalogDraft } from "@opencode-ai/plugin/v2/promise"
+import { define, type CatalogDraft, type PluginContext } from "@opencode-ai/plugin/v2/promise"
 import { promises as fs } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -412,7 +412,7 @@ export function parseCapabilitiesHtml(html: string): Record<string, ModelCapabil
 // Coleta e cache do catalogo remoto.
 // ---------------------------------------------------------------------------
 
-type Fetcher = typeof fetch
+type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 type Logger = (level: "info" | "warn", message: string, extra?: Record<string, unknown>) => void
 
 async function fetchText(fetcher: Fetcher, url: string): Promise<string> {
@@ -556,7 +556,7 @@ function enrichWithRemote(model: CommandCodeModel, remote: RemoteCatalog): Comma
   return {
     ...model,
     name: model.name ?? spec?.name,
-    context_length: model.context_length ?? spec?.context,
+    context_length: model.context_length || spec?.context,
     efforts: spec?.efforts ?? model.efforts,
     cost: spec?.cost ?? model.cost,
     // O site e a fonte mais confiavel; o snapshot cobre offline; a descricao
@@ -588,7 +588,7 @@ export interface CommandCodeModel {
 
 export async function fetchModels(
   apiKey: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: Fetcher = fetch,
 ): Promise<CommandCodeModel[]> {
   const response = await fetcher(`${BASE_URL}/models`, {
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -654,7 +654,9 @@ export function applyCatalog(
       model.limit = {
         // Context vem do /models (que manda para todos). O default so cobre
         // modelo vindo do fallback offline ou mudanca de shape da API.
-        context: source.context_length ?? DEFAULT_CONTEXT_TOKENS,
+        // `||` em vez de `??`: context_length 0 nao e valido e cairia num
+        // limite zerado em vez do default.
+        context: source.context_length || DEFAULT_CONTEXT_TOKENS,
         // A API nao expoe max output: fica o mapa curto + default.
         output: model.limit?.output ?? MAX_OUTPUT[source.id] ?? DEFAULT_OUTPUT_TOKENS,
       }
@@ -674,15 +676,75 @@ export function applyCatalog(
         headers: {},
         body: { reasoningEffort: effort },
       }))
+      // Modelos criados via update podem nascer desabilitados/inativos no
+      // catalogo; garante que aparecam (mesmo padrao do codex-everywhere).
+      if (m.enabled === undefined) m.enabled = true
+      if (m.status === undefined) m.status = "active"
     })
   }
 }
 
-// Estado no escopo do modulo: o transform registrado le sempre a versao mais
-// recente de `discovered`, entao um `catalog.reload()` apos o fetch faz os
-// modelos aparecerem sem precisar re-registrar nada.
-let discovered: CommandCodeModel[] = []
-let started = false
+export type RefreshScheduler = (callback: () => Promise<void>, delayMs: number) => unknown
+
+// Ciclo de vida do catalogo dinamico com estado LOCAL por contexto (sem
+// globais de modulo): carrega antes do primeiro transform, recarrega sob
+// mudanca de assinatura e preserva a ultima lista boa em falha de refresh.
+// Mesmo contrato do codex-everywhere: cada setup tem sua geracao e seu timer.
+export async function registerDynamicModelCatalog<Model>(options: {
+  ctx: PluginContext
+  load: () => Promise<Model[]>
+  apply: (catalog: CatalogDraft, models: readonly Model[]) => void
+  signature: (models: readonly Model[]) => string
+  refreshMs: number
+  schedule?: RefreshScheduler
+  onError: (phase: "initial" | "refresh", error: unknown) => void
+  onApplied?: (models: readonly Model[]) => void
+  onStale?: () => void
+}): Promise<void> {
+  let models: Model[] = []
+  let initialLoaded = false
+  try {
+    models = await options.load()
+    initialLoaded = true
+  } catch (error) {
+    options.onError("initial", error)
+  }
+  let signature = options.signature(models)
+  let generation = 0
+  let appliedGeneration = -1
+  await options.ctx.catalog.transform((catalog) => {
+    options.apply(catalog, models)
+    appliedGeneration = generation
+  })
+  if (initialLoaded) options.onApplied?.(models)
+  let refreshing = false
+  const refresh = async () => {
+    if (refreshing) return
+    refreshing = true
+    try {
+      const next = await options.load()
+      const nextSignature = options.signature(next)
+      if (nextSignature === signature) return
+      models = next
+      const targetGeneration = ++generation
+      for (let attempt = 0; appliedGeneration < targetGeneration && attempt < 2; attempt++) {
+        await options.ctx.catalog.reload()
+      }
+      if (appliedGeneration < targetGeneration) {
+        options.onStale?.()
+        return
+      }
+      signature = nextSignature
+      options.onApplied?.(next)
+    } catch (error) {
+      options.onError("refresh", error)
+    } finally {
+      refreshing = false
+    }
+  }
+  const schedule = options.schedule ?? ((callback, delayMs) => setInterval(() => void callback(), delayMs))
+  schedule(refresh, options.refreshMs)
+}
 
 // A assinatura cobre os campos que mudam o resultado do catalogo (nao so ids):
 // assim uma mudanca de preco/vision/efforts publicada no catalogo remoto tambem
@@ -695,6 +757,58 @@ const signatureOf = (models: readonly CommandCodeModel[]): string =>
     .sort()
     .join("|")
 
+const EMPTY_REMOTE: RemoteCatalog = { fetchedAt: 0, catalog: {}, caps: {} }
+
+// Setup testavel e sem estado global: busca antes do primeiro transform,
+// com o estado do ciclo de vida isolado por contexto (via
+// registerDynamicModelCatalog). O `fetcher` injetado serve so o /models; o
+// catalogo remoto usa o fetch global — com mock (testes) ele e pulado e vale
+// o snapshot estatico.
+export async function setupCommandCode(
+  ctx: PluginContext,
+  apiKey: string,
+  fetcher: Fetcher = fetch,
+  schedule?: RefreshScheduler,
+): Promise<void> {
+  // Ultimo remoto resolvido neste contexto: alimenta os avisos do onApplied.
+  let lastRemote: RemoteCatalog = EMPTY_REMOTE
+  await registerDynamicModelCatalog({
+    ctx,
+    load: async () => {
+      const apiModels = await fetchModels(apiKey, fetcher)
+      const remote = fetcher === fetch ? await loadRemoteCatalog(fetcher) : EMPTY_REMOTE
+      lastRemote = remote
+      return mergeRemoteModels(apiModels, remote)
+    },
+    apply: (catalog, models) => applyCatalog(catalog, apiKey, models),
+    signature: signatureOf,
+    refreshMs: REFRESH_MS,
+    schedule,
+    onError: (phase, error) => console.warn(
+      `[commandcode] descoberta ${phase === "initial" ? "inicial " : ""}de modelos falhou:`,
+      error,
+    ),
+    onApplied: (models) => {
+      console.info(`[commandcode] ${models.length} modelos descobertos.`)
+      const semContexto = models.filter((model) => !model.context_length).map((model) => model.id)
+      // Se a API parar de mandar context_length, os modelos caem no default de
+      // 200k silenciosamente. Melhor gritar no log do que truncar sem aviso.
+      if (semContexto.length > 0) {
+        console.warn(`[commandcode] ${semContexto.length} modelo(s) sem context_length:`, semContexto.join(", "))
+      }
+      const fora = models
+        .filter((model) => !CATALOG[model.id] && !lastRemote.catalog[model.id])
+        .map((model) => model.id)
+      if (fora.length > 0) {
+        console.warn(`[commandcode] ${fora.length} modelo(s) fora do snapshot e do catalogo remoto:`, fora.join(", "))
+      }
+    },
+    onStale: () => console.warn(
+      "[commandcode] catalogo nao aplicou a geracao mais recente; nova tentativa no proximo refresh.",
+    ),
+  })
+}
+
 export default define({
   id: PROVIDER_ID,
   setup: async (ctx) => {
@@ -703,56 +817,6 @@ export default define({
       console.warn("[commandcode] CMD_API_KEY ausente, provider nao carregado.")
       return
     }
-
-    // Evita empilhar transforms/timers caso o setup rode mais de uma vez no
-    // mesmo processo (recarga de config, etc).
-    if (started) return
-    started = true
-
-    // Registra o transform de forma sincrona e nao-bloqueante: ele apenas
-    // aplica o que ja esta em `discovered` (vazio no primeiro boot). Nada de
-    // I/O de rede aqui dentro, entao o boot do OpenCode nunca congela esperando
-    // a API da Command Code responder.
-    await ctx.catalog.transform((catalog) => {
-      applyCatalog(catalog, apiKey, discovered)
-    })
-
-    // Descoberta de modelos em segundo plano: API + catalogo remoto em paralelo.
-    // So dispara reload quando algo muda de verdade (ids, custo, vision, efforts).
-    let signature = signatureOf(discovered)
-    let refreshing = false
-    const refresh = async () => {
-      if (refreshing) return
-      refreshing = true
-      try {
-        const [apiModels, remote] = await Promise.all([fetchModels(apiKey), loadRemoteCatalog()])
-        const next = mergeRemoteModels(apiModels, remote)
-        const nextSignature = signatureOf(next)
-        if (nextSignature === signature) return
-        discovered = next
-        signature = nextSignature
-        await ctx.catalog.reload()
-        const semContexto = next.filter((model) => !model.context_length).map((model) => model.id)
-        console.info(`[commandcode] ${next.length} modelos descobertos.`)
-        // Se a API parar de mandar context_length, os modelos caem no default de
-        // 200k silenciosamente. Melhor gritar no log do que truncar sem aviso.
-        if (semContexto.length > 0) {
-          console.warn(`[commandcode] ${semContexto.length} modelo(s) sem context_length:`, semContexto.join(", "))
-        }
-        const fora = next.filter((model) => !CATALOG[model.id] && !remote.catalog[model.id]).map((model) => model.id)
-        if (fora.length > 0) {
-          console.warn(`[commandcode] ${fora.length} modelo(s) fora do snapshot e do catalogo remoto:`, fora.join(", "))
-        }
-      } catch (error) {
-        console.warn("[commandcode] descoberta de modelos falhou:", error)
-      } finally {
-        refreshing = false
-      }
-    }
-
-    // Primeira descoberta imediata (sem await, para nao bloquear o setup) e
-    // depois periodica. O intervalo vive junto com o processo do servidor.
-    void refresh()
-    setInterval(() => void refresh(), REFRESH_MS)
+    await setupCommandCode(ctx, apiKey)
   },
 })
