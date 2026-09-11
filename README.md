@@ -6,17 +6,19 @@
 
 > 🇧🇷 **[Versão em Português (Brasil)](README.pt-BR.md)**
 
-Plugins that wire the [Command Code](https://commandcode.ai) gateway into [OpenCode](https://opencode.ai) as a first-class provider, plus a standalone tokens-per-second meter for the TUI.
+Plugins that wire the [Command Code](https://commandcode.ai) gateway into [OpenCode](https://opencode.ai) as a first-class provider.
 
 This repo ships **three files**:
 
 | File | OpenCode | What it is |
 | --- | --- | --- |
-| `commandcode-v1.ts` | **v1** (stable) | Command Code provider (server plugin) — use with OpenCode 1.x |
-| `commandcode-v2.ts` | **v2** (beta) | Command Code provider (server plugin) — use with OpenCode 2.x (beta) |
-| `tui-tps.tsx` | **TUI** | Optional tokens/sec meter (TUI plugin) — independent of the provider, works with either version |
+| `commandcode-v1.ts` | **v1** (stable) | Command Code provider (server plugin) — used by OpenCode 1.x |
+| `commandcode-v2.ts` | **v2** (beta) | Command Code provider (server plugin) — used by OpenCode 2.x (beta) |
+| `server.ts` | **both** | Entrypoint — dispatches to the right implementation by runtime |
 
-> Use **only one** provider file, matching your OpenCode version. They differ in how providers and capabilities are declared; runtime behavior (live `/models` discovery plus a catalog resolved live from the npm package and the models page, with an embedded offline snapshot) is the same. `tui-tps.tsx` is standalone and can be combined with either.
+> You never pick a file yourself: `server.ts` exports `{ id, server, setup }` — OpenCode 1.x calls `server`, OpenCode 2.x calls `setup`. They differ in how providers and capabilities are declared; runtime behavior (live `/models` discovery plus a catalog resolved live from the npm package and the models page, with an embedded offline snapshot) is the same.
+>
+> **Looking for the tokens-per-second meter?** It moved to its own package: [`opencode-tui-tps`](https://github.com/Breskott/opencode-tui-tps) — standalone TUI plugin, works on OpenCode 1.x and 2.x.
 
 ---
 
@@ -44,19 +46,15 @@ Earlier versions shipped vision / cost / efforts as a hardcoded snapshot that ha
 
 ---
 
-## TPS meter (tui-tps.tsx)
+## TPS meter → moved to opencode-tui-tps
 
-A standalone **TUI plugin** that shows token throughput in the terminal UI — on the bottom-right of the model line in OpenCode 1.x (`session_prompt_right` slot) and on the right side of the prompt footer in OpenCode 2.x (`prompt.footer` claim):
+The tokens-per-second meter used to ship inside this package as `tui-tps.tsx`. It now lives in its own repo — [opencode-tui-tps](https://github.com/Breskott/opencode-tui-tps) — so the provider package stays lean and the meter can be installed independently, with any provider.
 
-- While the model is streaming: `~42.5 tok/s` — a live estimate from the incoming text deltas (5-second rolling window).
-- When the turn finishes: `57.7 tok/s` — the exact rate, real output tokens divided by generation time (same idea as OpenCode 2's built-in `session.tps`).
-- Shows nothing when there is no data.
+Install it alongside (or instead of) this one — OpenCode 1.x via `tui.json`, OpenCode 2.x via `plugins`:
 
-The same `./tui` entry serves both runtimes: the module default-exports `{ id, tui, setup }` — OpenCode 1.x calls `tui`, OpenCode 2.x calls `setup` (the V2 plugin contract). On OpenCode 2 the meter is complementary to the built-in `session.tps` footer: the native one only shows the final rate per message, while this one renders a live estimate **while** the model is generating.
-
-It does not depend on the provider plugins and does not touch the Command Code client. TUI only — the web UI does not render TUI plugins.
-
-> **Troubleshooting:** the package pins `@opentui/core` / `@opentui/solid` to `0.4.5`, the version bundled into OpenCode 1.18.x, so the plugin never conflicts with the embedded runtime. If you still see `Environment variable "OPENTUI_FORCE_WCWIDTH" is already registered with different configuration.` in the TUI console, your package cache holds a mismatched copy: delete `~/.cache/opencode/packages/opencode-commandcode-plugin@git+https_` and restart. As a fallback that always works, copy `tui-tps.tsx` into `~/.config/opencode/tui/` and point `tui.json` at it (`{ "plugin": ["./tui/tui-tps.tsx"] }`) — a file outside `node_modules` resolves everything against the host runtime.
+```json
+{ "plugins": ["opencode-tui-tps@git+https://github.com/Breskott/opencode-tui-tps.git"] }
+```
 
 ---
 
@@ -64,7 +62,7 @@ It does not depend on the provider plugins and does not touch the Command Code c
 
 - Node.js + TypeScript (or Bun / Deno — anything your OpenCode setup runs)
 - A Command Code account with an API key
-- OpenCode installed (for the TPS meter: OpenCode 1.x with TUI plugin support; terminal UI only)
+- OpenCode installed
 
 ---
 
@@ -91,7 +89,7 @@ Open a new terminal afterwards so the variable loads into fresh sessions. Verify
 
 ### 2. Install the plugin
 
-The repo is an installable package (`package.json` exposes `./server` → `server.ts`, which serves OpenCode 1.x and 2.x, and `./tui` → `tui-tps.tsx`), so OpenCode can install it straight from GitHub. Pick **one** of the two ways:
+The repo is an installable package (`package.json` exposes `./server` → `server.ts`, which serves OpenCode 1.x and 2.x), so OpenCode can install it straight from GitHub. Pick **one** of the two ways:
 
 **A. CLI (one command)**
 
@@ -99,7 +97,7 @@ The repo is an installable package (`package.json` exposes `./server` → `serve
 opencode plugin "opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git" -g
 ```
 
-`-g` writes to your global config (`~/.config/opencode`). Without `-g` it installs into the current project's `.opencode/`. The command adds the plugin to `opencode.json` (provider) and, because the package also ships a TUI entry point, to `tui.json` (TPS meter).
+`-g` writes to your global config (`~/.config/opencode`). Without `-g` it installs into the current project's `.opencode/`. The command adds the plugin to `opencode.json` (provider).
 
 **B. Edit the config files yourself**
 
@@ -112,16 +110,7 @@ opencode plugin "opencode-commandcode-plugin@git+https://github.com/Breskott/ope
 }
 ```
 
-`tui.json` — TPS meter, optional (global: `~/.config/opencode/tui.json`, or project `.opencode/tui.json`):
-
-```json
-{
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["opencode-commandcode-plugin@git+https://github.com/Breskott/opencode-commandcode-plugin.git"]
-}
-```
-
-> Keep the `opencode-commandcode-plugin@` prefix in the spec. Without it OpenCode cannot cache the git package and re-clones the repo on every start (boots go from ~2s to ~10s). The same spec in both files is expected: `opencode.json` loads the `./server` entry, `tui.json` loads the `./tui` entry.
+> Keep the `opencode-commandcode-plugin@` prefix in the spec. Without it OpenCode cannot cache the git package and re-clones the repo on every start (boots go from ~2s to ~10s).
 
 **OpenCode 2.x (beta):** the same package works there — `server.ts` detects the runtime and loads the catalog-based v2 plugin automatically. Install with the v2 CLI (validated against opencode2 `0.0.0-beta-19425`):
 
@@ -137,12 +126,10 @@ Or add the spec to the v2 config yourself (`~/.config/opencode/opencode.json` �
 }
 ```
 
-The single `plugins` entry loads both the provider (`./server`) and the TPS meter (`./tui`). OpenCode 2 also ships a native throughput meter in the message footer (`session.tps`, on by default) — the plugin adds the live streaming estimate in the prompt footer.
-
 <details>
 <summary>Manual install for OpenCode 1.x (without git)</summary>
 
-Download `commandcode-v1.ts` (and optionally `tui-tps.tsx`) from this repo and drop them into `~/.config/opencode/plugins/` (Windows: `%USERPROFILE%\.config\opencode\plugins\`). If you install the TUI plugin manually, register the file in `tui.json` itself: `{ "plugin": ["./plugins/tui-tps.tsx"] }`.
+Download `commandcode-v1.ts` and `server.ts` from this repo and drop them into `~/.config/opencode/plugins/` (Windows: `%USERPROFILE%\.config\opencode\plugins\`).
 
 If you previously copied files by hand and now switch to the git install, delete the old copies — otherwise the plugin loads twice.
 
@@ -150,7 +137,7 @@ If you previously copied files by hand and now switch to the git install, delete
 
 ### 3. Restart OpenCode
 
-Done. The `commandcode` provider appears in the model picker with every Command Code model, the right context window, correct capabilities, and reasoning variants where applicable. With `tui.json` configured, the TPS meter shows up next to the model line.
+Done. The `commandcode` provider appears in the model picker with every Command Code model, the right context window, correct capabilities, and reasoning variants where applicable.
 
 ---
 
