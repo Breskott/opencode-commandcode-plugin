@@ -187,7 +187,16 @@ const VISION_PREFIXES: readonly string[] = [
 
 // Force bruto: ganha de tudo, inclusive do catalogo remoto. Use quando a
 // Command Code mudar uma capability e voce nao quiser esperar o cache/TTL.
-const MODEL_OVERRIDES: Readonly<Record<string, { input?: Modality[]; tool_call?: boolean; reasoning?: boolean }>> = {
+//
+// Caso real: o catalogo oficial (models.md) ainda NAO anuncia `max` no Muse
+// Spark Contributor, mas a API valida e honra o esforco
+// (low | medium | high | xhigh | max). `efforts` aqui fixa a lista final e
+// vence o `efforts` que vier do catalogo remoto.
+const MODEL_OVERRIDES: Readonly<
+  Record<string, { input?: Modality[]; tool_call?: boolean; reasoning?: boolean; efforts?: readonly string[] }>
+> = {
+  "meta/muse-spark-1.2-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },
+  "meta/muse-spark-1.3-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },
   // "MiniMaxAI/MiniMax-M3": { input: ["text", "image"] },
 }
 
@@ -226,9 +235,9 @@ const REASONING_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
   "meta/muse-spark-1.1": ["low", "medium", "high", "xhigh"],
   "meta/muse-spark-1.2": ["low", "medium", "high", "xhigh"],
-  "meta/muse-spark-1.2-contributor": ["low", "medium", "high", "xhigh"],
+  "meta/muse-spark-1.2-contributor": ["low", "medium", "high", "xhigh", "max"],
   "meta/muse-spark-1.3": ["low", "medium", "high", "xhigh", "max"],
-  "meta/muse-spark-1.3-contributor": ["low", "medium", "high", "xhigh"],
+  "meta/muse-spark-1.3-contributor": ["low", "medium", "high", "xhigh", "max"],
   "moonshotai/Kimi-K3": ["low", "high", "max"],
   "sakana/fugu-ultra": ["high", "xhigh"],
   "tencent/hy4-preview": ["low", "medium", "high"],
@@ -279,13 +288,25 @@ function inputModalities(model: CommandCodeModel): Modality[] {
   return VISION_PREFIXES.some((prefix) => id.startsWith(prefix)) ? ["text", "image"] : ["text"]
 }
 
+/**
+ * Efforts, do mais confiavel para o menos:
+ *   1. MODEL_OVERRIDES.efforts (force manual) ganha de tudo, inclusive do remoto
+ *   2. catalogo remoto (efforts do models.md)
+ *   3. REASONING_EFFORTS estatico
+ */
+function effortsOf(model: CommandCodeModel): readonly string[] {
+  const forced = MODEL_OVERRIDES[model.id]?.efforts
+  if (forced !== undefined) return forced
+  return model.efforts ?? REASONING_EFFORTS[model.id] ?? []
+}
+
 function supportsReasoning(model: CommandCodeModel): boolean {
   const override = MODEL_OVERRIDES[model.id]?.reasoning
   if (override !== undefined) return override
   if (model.reasoning !== undefined) return model.reasoning
   const known = CATALOG[model.id]
   if (known) return known.reasoning
-  return (model.efforts ?? REASONING_EFFORTS[model.id] ?? []).length > 0
+  return effortsOf(model).length > 0
 }
 
 function supportsTools(model: CommandCodeModel): boolean {
@@ -616,7 +637,7 @@ export function applyConfig(
   const merged: Record<string, unknown> = { ...existingModels }
 
   for (const source of models) {
-    const efforts = source.efforts ?? REASONING_EFFORTS[source.id] ?? []
+    const efforts = effortsOf(source)
     const input = inputModalities(source)
     const reasoning = supportsReasoning(source)
 
@@ -643,6 +664,10 @@ export function applyConfig(
     if (efforts.length > 0) {
       // No v1 `variants` e um objeto nomeado cujo valor vira options do modelo,
       // e nao o array `{ id, headers, body }` do v2.
+      // Aqui camelCase esta CERTO: o opencode v1 entrega essas options como
+      // providerOptions (`{ [providerID]: { reasoningEffort } }`, com
+      // `name: model.providerID` no SDK) e o proprio @ai-sdk/openai-compatible
+      // traduz para `reasoning_effort` na requisicao.
       entry.variants = Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
     } else if (reasoning) {
       entry.variants = Object.fromEntries(INFERRED_VARIANTS.map((variant) => [variant, { disabled: true }]))

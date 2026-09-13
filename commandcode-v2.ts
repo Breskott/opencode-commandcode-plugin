@@ -195,7 +195,16 @@ const VISION_PREFIXES: readonly string[] = [
 
 // Force bruto: ganha de tudo, inclusive do catalogo remoto. Use quando a
 // Command Code mudar uma capability e voce nao quiser esperar o cache/TTL.
-const MODEL_OVERRIDES: Readonly<Record<string, { input?: Modality[]; tool_call?: boolean; reasoning?: boolean }>> = {
+//
+// Caso real: o catalogo oficial (models.md) ainda NAO anuncia `max` no Muse
+// Spark Contributor, mas a API valida e honra o esforco
+// (low | medium | high | xhigh | max). `efforts` aqui fixa a lista final e
+// vence o `efforts` que vier do catalogo remoto.
+const MODEL_OVERRIDES: Readonly<
+  Record<string, { input?: Modality[]; tool_call?: boolean; reasoning?: boolean; efforts?: readonly string[] }>
+> = {
+  "meta/muse-spark-1.2-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },
+  "meta/muse-spark-1.3-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },
   // "MiniMaxAI/MiniMax-M3": { input: ["text", "image"] },
 }
 
@@ -232,9 +241,9 @@ const REASONING_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
   "meta/muse-spark-1.1": ["low", "medium", "high", "xhigh"],
   "meta/muse-spark-1.2": ["low", "medium", "high", "xhigh"],
-  "meta/muse-spark-1.2-contributor": ["low", "medium", "high", "xhigh"],
+  "meta/muse-spark-1.2-contributor": ["low", "medium", "high", "xhigh", "max"],
   "meta/muse-spark-1.3": ["low", "medium", "high", "xhigh", "max"],
-  "meta/muse-spark-1.3-contributor": ["low", "medium", "high", "xhigh"],
+  "meta/muse-spark-1.3-contributor": ["low", "medium", "high", "xhigh", "max"],
   "moonshotai/Kimi-K3": ["low", "high", "max"],
   "sakana/fugu-ultra": ["high", "xhigh"],
   "tencent/hy4-preview": ["low", "medium", "high"],
@@ -282,15 +291,18 @@ function supportsTools(model: CommandCodeModel): boolean {
 
 /**
  * Efforts, do mais confiavel para o menos:
- *   1. MODEL_OVERRIDES.reasoning === false zera; === true forca DEFAULT_EFFORTS
- *   2. catalogo remoto (efforts do models.md)
- *   3. REASONING_EFFORTS estatico
- *   4. fallback: conhecido do CATALOG = sem variant (o modelo decide);
+ *   1. MODEL_OVERRIDES.efforts (force manual) ganha de tudo, inclusive do remoto
+ *   2. MODEL_OVERRIDES.reasoning === false zera; === true forca DEFAULT_EFFORTS
+ *   3. catalogo remoto (efforts do models.md)
+ *   4. REASONING_EFFORTS estatico
+ *   5. fallback: conhecido do CATALOG = sem variant (o modelo decide);
  *      desconhecido = DEFAULT_EFFORTS (niveis universais)
  */
 function effortsOf(model: CommandCodeModel): readonly string[] {
   const override = MODEL_OVERRIDES[model.id]?.reasoning
   if (override === false) return []
+  const forced = MODEL_OVERRIDES[model.id]?.efforts
+  if (forced !== undefined) return forced
   if (model.efforts !== undefined) return model.efforts
   const known = REASONING_EFFORTS[model.id]
   if (known) return known
@@ -671,10 +683,16 @@ export function applyCatalog(
       model.cost = costOf(source)
       // "o nivel": catalogo remoto > REASONING_EFFORTS > fallback. Modelo sem
       // efforts conhecidos fica SEM variant (o modelo decide), como no CLI.
+      //
+      // No v2 `variant.body` vira OVERLAY CRU no JSON da requisicao
+      // (route/transport/http.js: bodyWithOverlay). A API da Command Code so
+      // valida/le `reasoning_effort` (snake_case) — o CLI oficial tambem manda
+      // snake. CamelCase (`reasoningEffort`) e descartado em silencio, entao
+      // snake aqui e o que faz o effort selecionado realmente valer.
       model.variants = effortsOf(source).map((effort) => ({
         id: effort,
         headers: {},
-        body: { reasoningEffort: effort },
+        body: { reasoning_effort: effort },
       }))
       // Modelos criados via update podem nascer desabilitados/inativos no
       // catalogo; garante que aparecam (mesmo padrao do codex-everywhere).

@@ -110,10 +110,10 @@ describe("applyCatalog", () => {
       // "valor do uso": cost do snapshot no shape v2 (array), cache_write ausente -> 0.
       cost: [{ input: 2.5, output: 15, cache: { read: 0.25, write: 0 } }],
       variants: [
-        { id: "low", headers: {}, body: { reasoningEffort: "low" } },
-        { id: "medium", headers: {}, body: { reasoningEffort: "medium" } },
-        { id: "high", headers: {}, body: { reasoningEffort: "high" } },
-        { id: "xhigh", headers: {}, body: { reasoningEffort: "xhigh" } },
+        { id: "low", headers: {}, body: { reasoning_effort: "low" } },
+        { id: "medium", headers: {}, body: { reasoning_effort: "medium" } },
+        { id: "high", headers: {}, body: { reasoning_effort: "high" } },
+        { id: "xhigh", headers: {}, body: { reasoning_effort: "xhigh" } },
       ],
     })
     // Kimi K3 agora expoe niveis no CLI oficial. Sem context_length na resposta,
@@ -123,9 +123,9 @@ describe("applyCatalog", () => {
       cost: [{ input: 3, output: 15, cache: { read: 0.3, write: 0 } }],
       limit: { context: 200_000, output: 32_000 },
       variants: [
-        { id: "low", headers: {}, body: { reasoningEffort: "low" } },
-        { id: "high", headers: {}, body: { reasoningEffort: "high" } },
-        { id: "max", headers: {}, body: { reasoningEffort: "max" } },
+        { id: "low", headers: {}, body: { reasoning_effort: "low" } },
+        { id: "high", headers: {}, body: { reasoning_effort: "high" } },
+        { id: "max", headers: {}, body: { reasoning_effort: "max" } },
       ],
     })
     // modelo fora do mapa curado -> sem visao (nao bate em VISION_PREFIXES),
@@ -135,9 +135,9 @@ describe("applyCatalog", () => {
       capabilities: { tools: true, input: ["text"], output: ["text"] },
       cost: [{ input: 0, output: 0, cache: { read: 0, write: 0 } }],
       variants: [
-        { id: "low", headers: {}, body: { reasoningEffort: "low" } },
-        { id: "medium", headers: {}, body: { reasoningEffort: "medium" } },
-        { id: "high", headers: {}, body: { reasoningEffort: "high" } },
+        { id: "low", headers: {}, body: { reasoning_effort: "low" } },
+        { id: "medium", headers: {}, body: { reasoning_effort: "medium" } },
+        { id: "high", headers: {}, body: { reasoning_effort: "high" } },
       ],
     })
   })
@@ -170,9 +170,9 @@ test("fetches before registering Command Code in every catalog context", async (
 test.each([
   ["meta/muse-spark-1.1", ["low", "medium", "high", "xhigh"]],
   ["meta/muse-spark-1.2", ["low", "medium", "high", "xhigh"]],
-  ["meta/muse-spark-1.2-contributor", ["low", "medium", "high", "xhigh"]],
+  ["meta/muse-spark-1.2-contributor", ["low", "medium", "high", "xhigh", "max"]],
   ["meta/muse-spark-1.3", ["low", "medium", "high", "xhigh", "max"]],
-  ["meta/muse-spark-1.3-contributor", ["low", "medium", "high", "xhigh"]],
+  ["meta/muse-spark-1.3-contributor", ["low", "medium", "high", "xhigh", "max"]],
   ["claude-fable-5-1", ["low", "medium", "high", "xhigh", "max"]],
   ["gpt-6-astra", ["low", "medium", "high", "xhigh", "max"]],
   ["Qwen/Qwen3.8-Max-0902", ["low", "medium", "xhigh"]],
@@ -199,6 +199,6 @@ test.each([
   } as unknown as CatalogDraft
   applyCatalog(catalog, "test-key", [{ id }])
   expect(models[0].variants).toEqual(efforts.map((effort) => ({
-    id: effort, headers: {}, body: { reasoningEffort: effort },
+    id: effort, headers: {}, body: { reasoning_effort: effort },
   })))
 })

@@ -141,7 +141,7 @@ If you install through the git package you don't pick a file — `server.ts` dis
 | **AI SDK package field** | `npm: "@ai-sdk/openai-compatible"` | `package: "aisdk:@ai-sdk/openai-compatible"` (with the `aisdk:` prefix, set both at provider level and at each model level) |
 | **Attachment block** | `attachment: true` + `modalities: { input: ["text","image"] }` | `capabilities: { tools, input: ["text","image"], output: ["text"] }` (no `attachment` flag) |
 | **`cost` shape** | Object `{ input, output, cache_read, cache_write }` | `ModelCost[]` array of `{ input, output, cache: { read, write } }` |
-| **`variants` (reasoning)** | Named object `{ low: { reasoningEffort: "low" }, ... }` | Array `{ id, headers: {}, body: { reasoningEffort } }[]` |
+| **`variants` (reasoning)** | Named object `{ low: { reasoningEffort: "low" }, ... }` | Array `{ id, headers: {}, body: { reasoning_effort } }[]` |
 | **`limit.context`** | `model.context_length` from `/models`, falls back to `DEFAULT_CONTEXT_TOKENS` (200k) | Same |
 | **`limit.output`** | `MAX_OUTPUT[id]` (small map) → `DEFAULT_OUTPUT_TOKENS` (32k) | Same |
 | **Blocking API?** | Yes (await inside `config`) | No (transform is sync; discovery runs in background with a 5-minute interval) |
@@ -169,7 +169,7 @@ const MODEL_OVERRIDES = {
 }
 ```
 
-Both versions accept `{ input?: Modality[], tool_call?: boolean, reasoning?: boolean }`.
+Both versions accept `{ input?: Modality[], tool_call?: boolean, reasoning?: boolean, efforts?: readonly string[] }`. When `efforts` is set it wins over everything, including the remote catalog.
 
 The decision cascade is:
 
@@ -179,6 +179,15 @@ The decision cascade is:
 4. Id prefix (heuristic for new models with no remote or embedded data)
 
 Models that fall to tier 4 enter with conservative defaults (text-only, `$0.00` cost) and trigger a log warning: `N modelo(s) fora do snapshot do catalogo`. Reasoning efforts follow the same order; a model with no known efforts gets no variant selector (the model decides), except unknown ids in v2, which get the generic `low / medium / high`.
+
+**Muse Spark Contributor and `max`.** The official catalog (`models.md`) does not advertise `max` on `meta/muse-spark-1.2-contributor` / `meta/muse-spark-1.3-contributor` yet, but the Command Code API validates and honors it — the accepted set is exactly `low | medium | high | xhigh | max`. Both files force it through `MODEL_OVERRIDES`:
+
+```ts
+"meta/muse-spark-1.2-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },
+"meta/muse-spark-1.3-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },
+```
+
+**Sending the effort correctly.** The wire field is `reasoning_effort` (snake_case) — it is what the API validates and what the official Command Code CLI sends; camelCase `reasoningEffort` is silently ignored by the gateway. v1 reaches the snake field through the AI SDK: the variant value stays `{ reasoningEffort }` (camelCase), opencode 1.x forwards it as providerOptions, and `@ai-sdk/openai-compatible` translates it to `reasoning_effort`. v2 sends `variant.body` as a raw request-body overlay, so it must use the snake key directly: `body: { reasoning_effort }`.
 
 ---
 
