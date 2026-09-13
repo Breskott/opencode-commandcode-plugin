@@ -180,7 +180,7 @@ A cascata de decisão é:
 
 Modelos que caem no nível 4 entram com defaults conservadores (só texto, custo `$0.00`) e disparam um aviso no log: `N modelo(s) fora do snapshot do catalogo`. Reasoning efforts seguem a mesma ordem; modelo sem efforts conhecidos fica sem seletor de variant (o modelo decide) — exceto ids desconhecidos no v2, que ganham o genérico `low / medium / high`.
 
-**Muse Spark Contributor e `max`.** O catálogo oficial (`models.md`) ainda não anuncia `max` em `meta/muse-spark-1.2-contributor` / `meta/muse-spark-1.3-contributor`, mas a API da Command Code valida e honra — o conjunto aceito é exatamente `low | medium | high | xhigh | max`. Os dois arquivos forçam via `MODEL_OVERRIDES`:
+**Muse Spark Contributor e `max`.** A Meta anunciou o `max` no Muse Spark, mas a Command Code só ligou na API até agora — o CLI oficial e o `models.md` embutido ainda não listam no Contributor (a lista por modelo para no `xhigh`). A API aceita e honra: o conjunto validado é exatamente `low | medium | high | xhigh | max`. Os dois arquivos forçam via `MODEL_OVERRIDES`:
 
 ```ts
 "meta/muse-spark-1.2-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },

@@ -180,7 +180,7 @@ The decision cascade is:
 
 Models that fall to tier 4 enter with conservative defaults (text-only, `$0.00` cost) and trigger a log warning: `N modelo(s) fora do snapshot do catalogo`. Reasoning efforts follow the same order; a model with no known efforts gets no variant selector (the model decides), except unknown ids in v2, which get the generic `low / medium / high`.
 
-**Muse Spark Contributor and `max`.** The official catalog (`models.md`) does not advertise `max` on `meta/muse-spark-1.2-contributor` / `meta/muse-spark-1.3-contributor` yet, but the Command Code API validates and honors it — the accepted set is exactly `low | medium | high | xhigh | max`. Both files force it through `MODEL_OVERRIDES`:
+**Muse Spark Contributor and `max`.** Meta announced `max` for Muse Spark, but Command Code has only wired it into the API so far — the official CLI and its bundled `models.md` still omit it for the Contributor tier (their per-model list stops at `xhigh`). The API accepts and honors it: the validated set is exactly `low | medium | high | xhigh | max`. Both files force it through `MODEL_OVERRIDES`:
 
 ```ts
 "meta/muse-spark-1.2-contributor": { efforts: ["low", "medium", "high", "xhigh", "max"] },
